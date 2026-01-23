@@ -11,9 +11,9 @@
 
 | 역할 | 이름 | GitHub Profile | 주요 담당 기능 |
 | :--- | :--- | :--- | :--- |
-| **PM / 조장** | **이종헌** | [![jjongjjongR's GitHub](https://img.shields.io/badge/jjongjjongR-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/jjongjjongR) | PDF 파서, 정형 데이터 유효성 검증, 보고서 생성 |
-| **AI 파트 리더** | **이수빈** | [![leesupin's GitHub](https://img.shields.io/badge/leesupin-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/leesupin) | Parsing, 지표화, 현장 실사 체크리스트 |
-| **AI Developer** | **배수한** | [![uh004's GitHub](https://img.shields.io/badge/uh004-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/uh004) | OCR, 비정형 데이터 유효성 검증, 진단표 |
+| **PM / 조장** | **이종헌** | [![jjongjjongR's GitHub](https://img.shields.io/badge/jjongjjongR-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/jjongjjongR) | ESG |
+| **AI 파트 리더** | **이수빈** | [![leesupin's GitHub](https://img.shields.io/badge/leesupin-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/leesupin) | 안전-보건 |
+| **AI Developer** | **배수한** | [![uh004's GitHub](https://img.shields.io/badge/uh004-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/uh004) | 컴플라이언스 |
 
 ---
 
