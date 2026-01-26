@@ -1,24 +1,23 @@
 # app/schemas.py
-'''
-요청/응답 스키마(=백엔드/UI와의 계약)
-- 핵심: 노드 출력과 완전히 일치시켜 런타임 검증 에러 방지
-'''
 
 from __future__ import annotations
+
 from pydantic import BaseModel, Field
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
-
-# -------------------------
-# Main Run Response
-# -------------------------
 
 class EsgFileInfo(BaseModel):
     file_id: str
     file_name: str
     file_path: str
     ext: str
-    kind: Literal["XLSX", "PDF", "IMAGE", "UNKNOWN"]
+    kind: str
+
+
+class EsgTriageSummary(BaseModel):
+    file_count: int
+    kinds: list[str]
+    exts: list[str]
 
 
 class EsgSlotMapItem(BaseModel):
@@ -36,7 +35,7 @@ class EsgExtractedItem(BaseModel):
     value: float
     unit: str
     evidence_ref: str
-    meta: dict[str, Any] = Field(default_factory=dict)  # normal_avg/spike_ratio/yoy 등은 여기로
+    meta: dict[str, Any] | None = None
 
 
 class EsgValidationIssue(BaseModel):
@@ -44,9 +43,9 @@ class EsgValidationIssue(BaseModel):
     code: str
     message: str
     file_id: str
-    evidence_ref: Optional[str] = None
-    slot_name: Optional[str] = None
-    meta: dict[str, Any] = Field(default_factory=dict)
+    evidence_ref: str | None = None
+    slot_name: str | None = None
+    meta: dict[str, Any] | None = None
 
 
 class EsgSummaryCard(BaseModel):
@@ -57,80 +56,44 @@ class EsgSummaryCard(BaseModel):
 class EsgAnomalyCandidate(BaseModel):
     slot_name: str
     title: str
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float
     rationale: str
-    suggested_evidence: list[str]  # 추가로 확인할 증빙 리스트
+    suggested_evidence: list[str]
 
 
 class EsgResubmitDiff(BaseModel):
     has_previous: bool
-    previous_status: Optional[Literal["OK", "WARN", "FAIL"]] = None
-    current_status: Literal["OK", "WARN", "FAIL"]
-    delta_fail: int = 0
-    delta_warn: int = 0
-    fixed_issues: list[str] = Field(default_factory=list)    # code 목록
-    new_issues: list[str] = Field(default_factory=list)      # code 목록
-    note: str = ""
+    previous_status: str | None
+    current_status: str | None
+    delta_fail: int
+    delta_warn: int
+    fixed_issues: list[dict[str, Any]]
+    new_issues: list[dict[str, Any]]
+    note: str
 
 
 class EsgRunResponse(BaseModel):
+    # Day4 핵심: run_id/prev_run_id
+    run_id: str = Field(..., description="AI 엔진 실행 식별자")
+    prev_run_id: str | None = Field(default=None, description="이전 실행(run) 식별자(재제출 비교용)")
     draft_id: str
+
     status: Literal["OK", "WARN", "FAIL"]
-    triage: dict[str, Any]
+
+    triage: EsgTriageSummary
     files: list[EsgFileInfo]
+
     slot_map: list[EsgSlotMapItem]
     extracted: list[EsgExtractedItem]
     issues: list[EsgValidationIssue]
 
-    # A-2 보완요청서(문장) - 데모 안정: list[str]
-    questions: list[str]
+    # A-2 보완요청서(문장)
+    questions: list[str] = []
 
     # A-1 이상치 원인 후보
-    anomaly_candidates: list[EsgAnomalyCandidate] = Field(default_factory=list)
+    anomaly_candidates: list[EsgAnomalyCandidate] = []
 
     # A-3 재제출 개선 비교
-    resubmit_diff: Optional[EsgResubmitDiff] = None
+    resubmit_diff: EsgResubmitDiff | None = None
 
-    summary_cards: list[EsgSummaryCard]
-
-
-# -------------------------
-# B-1 RAG Lookup (Side Panel)
-# -------------------------
-
-class EsgRagLookupRequest(BaseModel):
-    slot_name: str
-    issue_code: str
-    query: str | None = None
-
-
-class EsgRagSnippet(BaseModel):
-    source: str
-    excerpt: str
-
-
-class EsgRagLookupResponse(BaseModel):
-    slot_name: str
-    issue_code: str
-    snippets: list[EsgRagSnippet]
-    note: str
-
-
-# -------------------------
-# Supply Chain Predict (Side Service)
-# -------------------------
-
-class EsgSupplyChainPredictRequest(BaseModel):
-    supplier_name: str
-    draft_id: str | None = None
-    current_status: Literal["OK", "WARN", "FAIL"]
-    issues: list[EsgValidationIssue] = Field(default_factory=list)
-
-
-class EsgSupplyChainPredictResponse(BaseModel):
-    supplier_name: str
-    risk_level: Literal["LOW", "MEDIUM", "HIGH"]
-    risk_score: float = Field(ge=0.0, le=1.0)
-    drivers: list[str] = Field(default_factory=list)
-    recommended_monitoring: list[str] = Field(default_factory=list)
-    note: str = ""
+    summary_cards: list[EsgSummaryCard] = []

@@ -1,0 +1,37 @@
+{
+  "draft_id": "test_draft_001",
+  "status": "FAIL",
+  "issues": [
+    {
+      "level": "FAIL",
+      "code": "ANOMALY_SPIKE_RATIO",
+      "message": "급증 구간 평균이 평시 대비 4.65배로 기준(1.8배) 초과입니다.",
+      "file_id": "133826ebabf6",
+      "evidence_ref": "EV|133826ebabf6|XLSX|sheet:* (date/electricity_kwh, Q4 baseline + spike 10/12~10/19)",
+      "slot_name": "electricity_usage_2025",
+      "meta": {
+        "spike_avg": 3991.375,
+        "normal_avg": 858.5595238095239,
+        "spike_ratio": 4.648920534117223
+      }
+    },
+    {
+      "level": "WARN",
+      "code": "MISSING_ISO_45001",
+      "message": "ISO 45001 인증서(PDF)가 누락되었습니다. (S 항목 신뢰도 저하)",
+      "file_id": "",
+      "evidence_ref": null,
+      "slot_name": "iso_45001",
+      "meta": {}
+    },
+    {
+      "level": "FAIL",
+      "code": "MISSING_CODE_OF_CONDUCT",
+      "message": "행동강령/윤리 서약 문서(이미지)가 누락되었습니다.",
+      "file_id": "",
+      "evidence_ref": null,
+      "slot_name": "code_of_conduct",
+      "meta": {}
+    }
+  ]
+}
