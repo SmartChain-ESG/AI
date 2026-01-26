@@ -1,44 +1,62 @@
 # app/main.py
-"""
-FastAPI 엔트리/라우팅 (Day4)
-- POST /ai/agent/run : 메인 검증 플로우 (A-1/A-2/A-3 포함 + DB 저장)
-- GET  /ai/runs/{run_id}
-- GET  /ai/drafts/{draft_id}/latest
-- POST /ai/rag/lookup : (서브1) 규정/가이드 근거 조회 (Day4 데모 응답)
-- POST /ai/supplychain/predict : (서브2) 공급망 리스크 예측 카드 (Day4 데모)
-"""
-
 from __future__ import annotations
 
-import time
+import json
 import uuid
-from typing import Any, Optional
+from typing import Any, Callable
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
-from app.utils.files import esg_save_uploads
-from app.graph.build import esg_build_graph
-
-from app.db.session import Base, ENGINE, esg_get_db
 from app.db import repo as db_repo
-from app.utils.diff import esg_compute_resubmit_diff
+from app.db.session import esg_get_db
+from app.graph.build import esg_build_graph
+from app.utils.files import esg_save_uploads
+
+# -----------------------------
+# App
+# -----------------------------
+app = FastAPI(
+    title="ESG AI API",
+    version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 내부 개발용(필요시 제한)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+graph = esg_build_graph()
 
 
 # -----------------------------
-# Side-service Request/Response (간단 스키마)
+# Health
+# -----------------------------
+@app.get("/healthz")
+def esg_healthz():
+    return {"ok": True}
+
+
+# -----------------------------
+# Models (서브서비스)
 # -----------------------------
 class RagLookupRequest(BaseModel):
     slot_name: str
     issue_code: str
-    query: Optional[str] = None
+    company_id: str | None = None
+    industry: str | None = None
 
 
 class RagSnippet(BaseModel):
     source: str
     excerpt: str
+    page: int | None = None
+    score: float | None = None
 
 
 class RagLookupResponse(BaseModel):
@@ -49,12 +67,17 @@ class RagLookupResponse(BaseModel):
 
 
 class SupplychainPredictRequest(BaseModel):
-    supplier_name: str = Field(..., description="예: 성광벤드")
-    draft_id: Optional[str] = Field(default=None, description="있으면 최신 run 기반으로 리스크 산정")
+    # ✅ 오늘 스펙(권장)
+    supplier_name: str | None = None
+    current_status: str | None = None
+    issues: list[dict[str, Any]] = Field(default_factory=list)
+
+    # ✅ Day4 호환(있으면 latest run에서 가져오던 방식)
+    draft_id: str | None = None
 
 
 class SupplychainPredictResponse(BaseModel):
-    supplier_name: str
+    supplier_name: str | None = None
     risk_level: str
     risk_score: float
     drivers: list[str]
@@ -62,121 +85,41 @@ class SupplychainPredictResponse(BaseModel):
     note: str
 
 
-app = FastAPI(title="AI Validation Service (Day4: Postgres Ready)")
-graph = esg_build_graph()  # 서버 시작 시 1회 compile
-
-
-@app.on_event("startup")
-def _startup_create_tables():
-    """
-    Day4 MVP:
-    - DB 연결을 몇 번 재시도한 뒤(create_all 전에) 테이블 생성
-    - Day5~Day6에 Alembic으로 교체 예정
-    """
-    last_err: Exception | None = None
-
-    for i in range(1, 21):  # 최대 20번
-        try:
-            with ENGINE.connect() as conn:
-                conn.execute(text("SELECT 1"))
-            # 연결 OK -> 테이블 생성
-            Base.metadata.create_all(bind=ENGINE)
-            print("[DB] create_all done")
-            return
-        except Exception as e:
-            last_err = e
-            print(f"[DB] waiting... ({i}/20) err={e}")
-            time.sleep(0.5)
-
-    raise RuntimeError(f"DB is not reachable after retries: {last_err}")
-
-
-@app.get("/healthz")
-def healthz():
-    return {"ok": True}
-
-
 # -----------------------------
-# A-2: 보완요청서(문장) fallback 생성
+# 내부 유틸(데모 fallback)
+# ※ 우리 규칙: 함수명은 무조건 esg_로 시작
 # -----------------------------
-def _fallback_questions_from_issues(issues: list[dict[str, Any]]) -> list[str]:
+def esg_fallback_questions_from_issues(issues: list[dict[str, Any]]) -> list[str]:
+    if not issues:
+        return []
     qs: list[str] = []
-    for it in issues:
-        lv = str(it.get("level", "")).upper()
-        if lv not in ("FAIL", "WARN"):
-            continue
-
-        code = it.get("code", "")
-        slot = it.get("slot_name", "unknown")
-        msg = it.get("message", "")
-
-        if code == "ANOMALY_SPIKE_RATIO":
-            qs.append(
-                "전력 사용량 급증(10/12~10/19) 원인 확인을 위해 아래 자료를 추가 제출해 주세요: "
-                "① 전기요금 고지서 원본(PDF) ② 계측기 교정 성적서(해당 기간) "
-                "③ 생산량/가동률 일별 또는 주간 데이터(XLSX/CSV)."
-            )
-        elif slot == "code_of_conduct":
-            qs.append(
-                "행동강령/윤리 서약 문서의 최신 승인본을 제출해 주세요. "
-                "승인일/결의 주체/버전 정보가 포함된 파일(이미지 또는 PDF)을 권장합니다."
-            )
-        else:
-            qs.append(f"[보완요청] {slot}: {msg} (이슈코드: {code}) 관련 추가 근거/원본 자료를 제출해 주세요.")
-
-        if len(qs) >= 3:
-            break
+    for i in issues[:5]:
+        code = i.get("code", "UNKNOWN")
+        slot = i.get("slotName") or i.get("slot_name") or "-"
+        msg = i.get("message") or ""
+        qs.append(f"[{code}] ({slot}) 보완 제출이 필요합니다. {msg}".strip())
     return qs
 
 
-# -----------------------------
-# A-1: 이상치 원인 후보 fallback (LLM 없이도 데모)
-# -----------------------------
-def _fallback_anomaly_candidates(result_json: dict[str, Any]) -> list[dict[str, Any]]:
-    issues = result_json.get("issues", []) or []
-    extracted = result_json.get("extracted", []) or []
-
-    has_spike = any((i.get("code") == "ANOMALY_SPIKE_RATIO") for i in issues)
-    if not has_spike:
-        return []
-
-    meta_2024 = None
-    meta_2025 = None
-    for x in extracted:
-        if x.get("slot_name") == "electricity_usage_2024":
-            meta_2024 = (x.get("meta") or {})
-        if x.get("slot_name") == "electricity_usage_2025":
-            meta_2025 = (x.get("meta") or {})
-
-    r24 = (meta_2024 or {}).get("spike_ratio")
-    r25 = (meta_2025 or {}).get("spike_ratio")
-    normal_avg = (meta_2025 or {}).get("normal_avg")
-
-    ref = []
-    if r24 is not None and r25 is not None:
-        ref.append(f"참고: 2024 동일 구간 spike_ratio={float(r24):.2f}, 2025={float(r25):.2f}")
-    if normal_avg is not None:
-        ref.append(f"2025 평시 평균={float(normal_avg):.0f}kWh")
-
-    rationale_tail = " / ".join(ref) if ref else "급증 패턴 확인(10/12~10/19)"
-
+def esg_fallback_anomaly_candidates(result_json: dict[str, Any]) -> list[dict[str, Any]]:
+    rationale_tail = "추가 증빙 확인 후 원인 분류가 가능합니다."
     return [
         {
             "slot_name": "electricity_usage_2025",
-            "title": "생산량 증가/가동률 상승",
+            "title": "생산량 증가/설비 가동률 상승",
             "confidence": 0.55,
-            "rationale": f"급증 구간에 집중된 사용량 상승. {rationale_tail}",
+            "rationale": f"특정 기간 전력 급등은 생산/가동률 변화 가능성이 있습니다. {rationale_tail}",
             "suggested_evidence": [
-                "생산량/가동률 일별 데이터(XLSX/CSV)",
-                "설비 가동 로그(PLC/설비 로그)",
-                "근무/교대 편성표(연장 가동 여부)",
+                "기간별 생산량/가동시간 로그",
+                "라인/설비별 가동률 리포트",
+                "수주/출하 증가 근거",
             ],
         },
         {
             "slot_name": "electricity_usage_2025",
-            "title": "설비 증설/신규 라인 가동",
-            "confidence": 0.45,
-            "rationale": f"특정 기간 집중 상승은 신규 설비/라인 변경과도 일치 가능. {rationale_tail}",
+            "title": "설비 증설/신규 장비 도입",
+            "confidence": 0.52,
+            "rationale": f"신규 설비 도입 직후 전력 증가 패턴일 수 있습니다. {rationale_tail}",
             "suggested_evidence": [
                 "설비 도입/설치 내역(계약/검수 문서)",
                 "설비 시운전 기록",
@@ -197,6 +140,29 @@ def _fallback_anomaly_candidates(result_json: dict[str, Any]) -> list[dict[str, 
     ]
 
 
+def esg_safe_json_loads(s: str | None) -> Any:
+    if not s:
+        return None
+    try:
+        return json.loads(s)
+    except Exception:
+        return None
+
+
+def esg_get_resubmit_diff_computer() -> Callable[[Any, Any], dict[str, Any]]:
+    """
+    resubmit diff 계산 함수 가져오기.
+    - 우선: app.graph.nodes.resubmit_diff_compute.esg_compute_resubmit_diff
+    - fallback: app.graph.nodes.resubmit_diff.esg_compute_resubmit_diff
+    """
+    try:
+        from app.graph.nodes.resubmit_diff_compute import esg_compute_resubmit_diff  # type: ignore
+        return esg_compute_resubmit_diff
+    except Exception:
+        from app.graph.nodes.resubmit_diff import esg_compute_resubmit_diff  # type: ignore
+        return esg_compute_resubmit_diff
+
+
 # -----------------------------
 # Main: /ai/agent/run
 # -----------------------------
@@ -204,6 +170,12 @@ def _fallback_anomaly_candidates(result_json: dict[str, Any]) -> list[dict[str, 
 def esg_run_agent(
     draft_id: str = Form(...),
     files: list[UploadFile] = File(...),
+    # ✅ 오늘 확정 계약(옵션)
+    slot_hint: str | None = Form(None),       # JSON string
+    allowed_items: str | None = Form(None),   # JSON string(list)
+    company_id: str | None = Form(None),
+    period_start: str | None = Form(None),
+    period_end: str | None = Form(None),
     db: Session = Depends(esg_get_db),
 ):
     saved_files = esg_save_uploads(files)
@@ -211,24 +183,50 @@ def esg_run_agent(
     prev = db_repo.esg_db_get_latest_run_by_draft(db, draft_id)
     run_id = uuid.uuid4().hex[:12]
 
-    init_state = {
+    parsed_slot_hint = esg_safe_json_loads(slot_hint)
+    parsed_allowed_items = esg_safe_json_loads(allowed_items)
+    if not isinstance(parsed_allowed_items, list):
+        parsed_allowed_items = []
+
+    init_state: dict[str, Any] = {
         "draft_id": draft_id,
+        "company_id": company_id,
+        "period": {"start": period_start, "end": period_end} if (period_start or period_end) else None,
         "files": saved_files,
-        "slot_hint": None,
+        "allowed_items": parsed_allowed_items,
+        "slot_hint": parsed_slot_hint,
+        # 그래프 노드에서 채울 값(기존 Day4 호환)
+        "triage": {},
         "slot_map": [],
         "extracted": [],
+        "validation": [],
         "issues": [],
+        "evidence": [],
+        # LLM 노드 산출(오늘 스펙)
+        "clarification_questions": [],
+        "summary_cards": {},
+        # Day4 호환(기존 필드 유지)
         "questions": [],
-        "summary_cards": [],
         "status": "OK",
     }
-    out = dict(graph.invoke(init_state))
+
+    try:
+        out = dict(graph.invoke(init_state))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"graph.invoke failed: {e}")
 
     triage = out.get("triage") or {
         "file_count": len(saved_files),
         "kinds": sorted(list({f.get("kind") for f in saved_files})),
         "exts": sorted(list({f.get("ext") for f in saved_files})),
     }
+
+    # summary_cards 정규화(최소 보장)
+    raw_summary = out.get("summary_cards")
+    if isinstance(raw_summary, dict):
+        summary_cards = raw_summary
+    else:
+        summary_cards = {"approver": raw_summary or [], "buyer": raw_summary or []}
 
     result_json: dict[str, Any] = {
         "run_id": run_id,
@@ -239,22 +237,34 @@ def esg_run_agent(
         "files": out.get("files", saved_files),
         "slot_map": out.get("slot_map", []),
         "extracted": out.get("extracted", []),
+        # ✅ 오늘 확정 계약 키
+        "validation": out.get("validation", []),
         "issues": out.get("issues", []),
+        "evidence": out.get("evidence", []),
+        "clarification_questions": out.get("clarification_questions", []),
+        "summary_cards": summary_cards,
+        # ✅ Day4 호환(기존 키 유지)
         "questions": out.get("questions", []),
-        "summary_cards": out.get("summary_cards", []),
     }
 
+    # 질문 fallback: questions/clarification_questions 둘 다 채우기
     if not result_json["questions"]:
-        result_json["questions"] = _fallback_questions_from_issues(result_json["issues"])
+        result_json["questions"] = esg_fallback_questions_from_issues(result_json["issues"])
+    if not result_json["clarification_questions"]:
+        result_json["clarification_questions"] = list(result_json["questions"])
 
+    # A-1 (fallback 유지)
     anomaly_candidates = out.get("anomaly_candidates")
     if not anomaly_candidates:
-        anomaly_candidates = _fallback_anomaly_candidates(result_json)
+        anomaly_candidates = esg_fallback_anomaly_candidates(result_json)
     result_json["anomaly_candidates"] = anomaly_candidates or []
 
+    # A-3 diff
     prev_result = prev.result_json if prev else None
+    esg_compute_resubmit_diff = esg_get_resubmit_diff_computer()
     result_json["resubmit_diff"] = esg_compute_resubmit_diff(prev_result, result_json)
 
+    # DB 저장
     try:
         db_repo.esg_db_save_run(
             db,
@@ -288,42 +298,69 @@ def esg_get_latest_by_draft(draft_id: str, db: Session = Depends(esg_get_db)):
 
 
 # -----------------------------
-# (서브1) 규정/가이드 근거 조회 - Day4 데모
+# (서브1) 규정/가이드 근거 조회 - Day4 데모(판정 영향 0)
 # -----------------------------
 @app.post("/ai/rag/lookup", response_model=RagLookupResponse)
 def esg_rag_lookup(req: RagLookupRequest):
     return RagLookupResponse(
         slot_name=req.slot_name,
         issue_code=req.issue_code,
-        snippets=[RagSnippet(source="DEMO", excerpt="관련 근거를 찾지 못했습니다. (데모: 문서 코퍼스 확장 필요)")],
-        note="사이드 패널 참고용 근거 조회입니다. 메인 판정에는 사용되지 않습니다.",
+        snippets=[
+            RagSnippet(
+                source="DEMO",
+                excerpt="관련 근거를 찾지 못했습니다. (데모: 문서 코퍼스 확장 필요)",
+                page=None,
+                score=None,
+            )
+        ],
+        note="사이드 패널 참고용 근거 조회입니다. 메인 판정에는 사용되지 않습니다.(판정 영향 0)",
     )
 
 
 # -----------------------------
-# (서브2) 공급망 예측(판정 영향 0) - Day4 데모 카드
+# (서브2) 공급망 리스크 예측(판정 영향 0) - Day4 데모 카드
 # -----------------------------
 @app.post("/ai/supplychain/predict", response_model=SupplychainPredictResponse)
 def esg_supplychain_predict(req: SupplychainPredictRequest, db: Session = Depends(esg_get_db)):
     drivers: list[str] = []
     score = 0.35
 
-    if req.draft_id:
+    # 1) 오늘 스펙: current_status/issues가 들어오면 그걸 우선 사용
+    st = (req.current_status or "").upper().strip()
+    issues = req.issues or []
+
+    if st in {"OK", "WARN", "FAIL"}:
+        if st == "FAIL":
+            score = 0.70
+            drivers.append("제출 데이터 검증 FAIL 발생")
+        elif st == "WARN":
+            score = 0.50
+            drivers.append("제출 데이터 검증 WARN 발생")
+        else:
+            score = 0.30
+            drivers.append("제출 데이터 검증 OK")
+
+        if issues:
+            drivers.append(f"이슈 {len(issues)}건 탐지")
+
+    # 2) Day4 호환: draft_id가 들어오면 latest 상태로 보정
+    elif req.draft_id:
         latest = db_repo.esg_db_get_latest_run_by_draft(db, req.draft_id)
         if latest:
-            st = str(latest.status).upper()
-            if st == "FAIL":
+            st2 = str(latest.status).upper()
+            if st2 == "FAIL":
                 score = 0.65
-                drivers.append("제출 데이터 검증 FAIL 발생")
-            elif st == "WARN":
+                drivers.append("제출 데이터 검증 FAIL 발생(최근 실행)")
+            elif st2 == "WARN":
                 score = 0.50
-                drivers.append("제출 데이터 검증 WARN 발생")
+                drivers.append("제출 데이터 검증 WARN 발생(최근 실행)")
             else:
                 score = 0.30
-                drivers.append("제출 데이터 검증 OK")
+                drivers.append("제출 데이터 검증 OK(최근 실행)")
         else:
             drivers.append("해당 draft_id의 실행 이력이 없음(초기 상태)")
 
+    # risk_level
     risk_level = "LOW"
     if score >= 0.65:
         risk_level = "MEDIUM"
@@ -335,6 +372,9 @@ def esg_supplychain_predict(req: SupplychainPredictRequest, db: Session = Depend
         risk_level=risk_level,
         risk_score=round(float(score), 2),
         drivers=drivers or ["데모: 내부 신호 기반 리스크 산정"],
-        recommended_monitoring=[],
-        note="운영 참고용 예측 카드입니다(판정 영향 0). 외부 데이터 연동 시 정교화 가능합니다.",
+        recommended_monitoring=[
+            "고위험 기간(급등/누락) 재발 여부 모니터링",
+            "보완요청 리드타임(재제출 지연) 추적",
+        ],
+        note="운영 참고용 예측 카드입니다(판정 영향 0). 외부 Search 연동 시 drivers를 확장할 수 있습니다.",
     )
