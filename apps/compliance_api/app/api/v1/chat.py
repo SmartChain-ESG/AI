@@ -1,47 +1,65 @@
-# app/api/v1/chat.py
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from typing import List
+
+# 내부 모듈 임포트
 from app.db.database import get_db
 from app.models.audit import AuditLog
-from openai import AsyncOpenAI
 from app.core.config import settings
 
-router = APIRouter()
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+# ✅ 에러 나는 langchain.chains/memory를 제외하고, 정상 작동하는 것만 사용
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_core.messages import HumanMessage, SystemMessage # 추가
 
-# 채팅 요청 데이터 모델
+router = APIRouter()
+
+# --- [초기 설정] ---
+DB_PATH = "vector_db/"
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small", openai_api_key=settings.OPENAI_API_KEY)
+vectorstore = Chroma(persist_directory=DB_PATH, embedding_function=embeddings)
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+
+llm = ChatOpenAI(model_name="gpt-4o", temperature=0, openai_api_key=settings.OPENAI_API_KEY)
+
+# 단순 질문 기록 저장용 (에러 방지용 임시 메모리)
+sessions_history = {}
+
 class ChatRequest(BaseModel):
-    audit_id: int  # 어느 문서에 대해 대화할 것인가?
-    message: str   # 사용자 질문
+    audit_id: int
+    message: str
 
 @router.post("/")
-async def chat_with_document(request: ChatRequest, db: Session = Depends(get_db)):
-    # 1. 문맥 추출: DB에서 과거 분석 결과 조회
+async def chat_with_law_expert(request: ChatRequest, db: Session = Depends(get_db)):
     log = db.query(AuditLog).filter(AuditLog.id == request.audit_id).first()
     if not log:
-        raise HTTPException(status_code=404, detail="해당 분석 이력을 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="이력을 찾을 수 없습니다.")
 
-    # 2. 문맥 구성(Context Construction): AI의 '단기 기억' 설계
-    # 분석 결과를 바탕으로 AI에게 페르소나와 배경지식을 주입합니다.
-    context_prompt = f"""
-    당신은 하도급법 전문 변호사이며, 방금 다음 계약서를 검토했습니다:
-    - 파일명: {log.filename}
-    - 리스크 점수: {log.risk_score}점
-    - 분석 요약: {log.summary}
-    - 생성된 피드백: {log.feedback_text}
-    
-    사용자의 질문에 대해 위 분석 내용을 바탕으로 전문적이고 구체적으로 답변하세요.
-    분석 결과에 없는 내용을 지어내지 말고, 근거가 필요하다면 '분석 결과에 따르면'이라고 명시하세요.
-    """
+    # 1. 수동으로 관련 법령 검색 (Chain 없이 직접 수행)
+    relevant_docs = retriever.invoke(request.message)
+    context_docs = "\n".join([doc.page_content for doc in relevant_docs])
 
-    # 3. AI 호출 (문맥 + 사용자 질문)
-    response = await client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": context_prompt},
-            {"role": "user", "content": request.message}
-        ]
+    # 2. 프롬프트 구성
+    system_prompt = (
+        f"당신은 하도급법 전문 변호사입니다. 아래 [참고 법령]과 [계약서 분석 결과]를 바탕으로 답변하세요.\n\n"
+        f"[참고 법령]\n{context_docs}\n\n"
+        f"[계약서 정보]\n- 파일명: {log.filename}\n- 분석 요약: {log.summary}\n- 리스크: {log.feedback_text}"
     )
+    
+    # 3. LLM 실행 (직접 호출)
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=request.message)
+    ]
+    response = llm.invoke(messages)
 
-    return {"answer": response.choices[0].message.content}
+    # 4. 소스 정리
+    sources = list(set([doc.metadata.get('source', '알 수 없는 출처') for doc in relevant_docs]))
+
+    return {
+        "answer": response.content,
+        "referenced_laws": sources,
+        "chat_history_count": 0  # 임시 고정
+    }

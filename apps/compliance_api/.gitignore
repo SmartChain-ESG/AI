@@ -1,16 +1,31 @@
 # 환경 변수 및 비밀 키
 .env
+venv_311/
+.git/
 
 # 데이터베이스 및 업로드 파일
 *.db
 uploads/
+**/uploads/
+
+# Vector DB (Chroma) local data
+vector_db/
+**/vector_db/
+
+# Chroma artifacts
+*.sqlite3
+*.bin
 
 # 파이썬 관련
 __pycache__/
 *.py[cod]
+*.pyc
 *$py.class
 .venv/
 venv/
+venv_*/
+env/
+ENV/
 
 # 기타 설정
 .vscode/

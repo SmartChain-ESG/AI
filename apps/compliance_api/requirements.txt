@@ -1,9 +1,26 @@
-fastapi>=0.100.0
-uvicorn[standard]>=0.22.0
-python-multipart>=0.0.6
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
-python-dotenv>=1.0.0
-openai>=1.0.0
-httpx>=0.24.0
-aiofiles>=23.1.0
+# Web Framework & Server
+fastapi
+uvicorn
+python-dotenv
+python-multipart
+
+# AI & LangChain
+langchain
+langchain-openai
+langchain-community
+langchain-chroma
+langchain-text-splitters
+chromadb
+pypdf
+python-docx
+tiktoken
+
+# Data & Database
+sqlalchemy
+pydantic
+pandas
+
+# Frontend (Dashboard)
+streamlit
+requests
+pillow

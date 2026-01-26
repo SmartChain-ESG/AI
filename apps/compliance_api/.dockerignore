@@ -1,0 +1,8 @@
+# 배포 시 제외할 무거운 폴더들
+venv_311/
+.git/
+.env
+__pycache__/
+vector_db/  # DB 데이터는 빌드 시 제외
+.vscode/
+*.pyc

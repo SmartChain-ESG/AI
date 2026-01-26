@@ -5,8 +5,8 @@ import json
 from datetime import datetime
 
 # FastAPI 백엔드 주소 (백엔드 서버에서 StaticFiles 설정이 되어 있어야 합니다)
-BASE_URL = "http://127.0.0.1:8000/api/v1"
-FILE_SERVER_URL = "http://127.0.0.1:8000/uploads" # 파일 서빙 경로
+BASE_URL = "http://127.0.0.1:8002/api/v1"
+FILE_SERVER_URL = "http://127.0.0.1:8002/uploads" # 파일 서빙 경로
 
 st.set_page_config(page_title="AI Compliance Dash", layout="wide", page_icon="🛡️")
 
@@ -98,26 +98,60 @@ with col2:
         audit_id = st.session_state.selected_audit_id
         st.info(f"**대상 문서:** {st.session_state.selected_filename}")
         
-        # 상세 데이터 가져오기
+        # 1. 문서가 바뀌면 채팅 내역 초기화
+        if "last_audit_id" not in st.session_state or st.session_state.last_audit_id != audit_id:
+            st.session_state.chat_messages = []
+            st.session_state.last_audit_id = audit_id
+
+        # 2. 상세 데이터 가져오기 (요약 표시용)
         detail = requests.get(f"{BASE_URL}/history/{audit_id}").json()
         
-        # 채팅 로그 컨테이너
-        with st.container(height=600): # 높이를 조금 더 높임
+        # 3. 채팅 UI 구성
+        chat_container = st.container(height=550)
+        
+        with chat_container:
             st.write(f"**[AI 분석 요약]**")
             st.write(detail['summary'])
             st.divider()
             
-            # 사용자 질문 입력
-            user_input = st.chat_input("문서 내용을 보며 궁금한 점을 질문하세요...")
-            if user_input:
+            # 이전 대화 내용 출력 (누적된 메시지 표시)
+            for msg in st.session_state.chat_messages:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+                    if "sources" in msg:
+                        st.caption(f"📍 참고 법령: {', '.join(msg['sources'])}")
+
+        # 4. 사용자 질문 입력 및 처리
+        if user_input := st.chat_input("문서 내용을 보며 궁금한 점을 질문하세요..."):
+            # 사용자 메시지 화면에 즉시 표시 및 저장
+            st.session_state.chat_messages.append({"role": "user", "content": user_input})
+            with chat_container:
                 st.chat_message("user").write(user_input)
                 
-                with st.spinner("답변 생성 중..."):
+                with st.spinner("법률 지식 검색 및 답변 생성 중..."):
                     chat_res = requests.post(
                         f"{BASE_URL}/chat/", 
                         json={"audit_id": audit_id, "message": user_input}
                     )
+                    
                     if chat_res.status_code == 200:
-                        st.chat_message("assistant").write(chat_res.json()["answer"])
+                        data = chat_res.json()
+                        answer = data["answer"] # 백엔드 응답의 answer
+                        sources = data.get("referenced_laws", []) # 백엔드 응답의 소스
+                        
+                        # 어시스턴트 답변 표시
+                        with st.chat_message("assistant"):
+                            st.markdown(answer)
+                            if sources:
+                                st.caption(f"📍 참고 법령: {', '.join(sources)}")
+                        
+                        # 대화 기록에 저장
+                        st.session_state.chat_messages.append({
+                            "role": "assistant", 
+                            "content": answer, 
+                            "sources": sources
+                        })
+                    else:
+                        st.error("서버 응답 오류가 발생했습니다.")
     else:
         st.write("👈 왼쪽 이력에서 문서를 선택하면 대화가 시작됩니다.")
