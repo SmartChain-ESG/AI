@@ -1,6 +1,6 @@
 """
 Person Detection Module
-Detects and counts people in TBM video frames using YOLOv8
+Detects and counts people in TBM video frames using yolo26n
 """
 
 import cv2
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class PersonDetector:
     """
     Detects and counts people in video frames using object detection.
-    Uses YOLOv8 for person detection.
+    Uses yolo26n for person detection.
     """
 
     def __init__(self, model_path: Optional[str] = None, confidence_threshold: float = 0.5):
@@ -23,12 +23,16 @@ class PersonDetector:
         Initialize the PersonDetector.
 
         Args:
-            model_path: Path to the trained model file. If None, uses default YOLOv8n.
+            model_path: Path to the trained model file. If None, uses default yolo26n
             confidence_threshold: Minimum confidence score for detections (0.0 to 1.0)
         """
         self.confidence_threshold = confidence_threshold
         self.model_path = model_path
         self.model = None
+
+        # 모델 저장 디렉토리 (Docker: /app/models, 로컬: ./models)
+        models_dir = Path("/app/models") if Path("/app/models").exists() else Path("./models")
+        models_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             from ultralytics import YOLO
@@ -36,8 +40,27 @@ class PersonDetector:
                 self.model = YOLO(model_path)
                 logger.info(f"Loaded custom model from {model_path}")
             else:
-                self.model = YOLO('yolov8n.pt')  # Default pretrained model
-                logger.info("Loaded default YOLOv8n model")
+                # 기본 YOLO 모델을 models 폴더에서 로드
+                default_model_path = models_dir / 'yolo26n.pt'
+                
+                if default_model_path.exists():
+                    # 이미 다운로드된 모델 사용
+                    self.model = YOLO(str(default_model_path))
+                    logger.info(f"Loaded default yolo26n from {default_model_path}")
+                else:
+                    # 처음 실행: 다운로드 후 models 폴더로 이동
+                    logger.info("Downloading yolo26n model...")
+                    self.model = YOLO('yolo26n.pt')
+                    
+                    # 다운로드된 모델을 models 폴더로 이동
+                    current_model = Path('yolo26n.pt')
+                    if current_model.exists():
+                        import shutil
+                        shutil.move(str(current_model), str(default_model_path))
+                        logger.info(f"Moved model to {default_model_path}")
+                    
+                    logger.info("Loaded default yolo26n model")
+                    
         except ImportError:
             logger.error("ultralytics package not installed. Please install: pip install ultralytics")
             raise
@@ -61,7 +84,7 @@ class PersonDetector:
         if self.model is None:
             raise RuntimeError("Model not initialized")
 
-        results = self.model(image, conf=self.confidence_threshold, classes=[0])  # class 0 = person
+        results = self.model(image, conf=self.confidence_threshold, classes=[0], verbose=False)  # class 0 = person
 
         detections = []
         for result in results:
