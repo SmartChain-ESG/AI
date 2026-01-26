@@ -1,38 +1,31 @@
 # ==================================================
 # TBM Safety Management API - Requirements
-# ==================================================
-# Python: 3.9
-# 팀: 안전보건팀
-# 업데이트: 2026-01-26
+# Python: 3.10.19
+# Target: python:3.10-slim (CPU)
+# Updated: 2026-01-26
 # ==================================================
 
-# FastAPI and Server
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-multipart==0.0.6
-pydantic==2.5.0
+# FastAPI & Server
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+pydantic==2.6.4
 
 # Computer Vision
 numpy==1.26.4
-opencv-python-headless==4.8.1.78
+opencv-python-headless==4.9.0.80
 ultralytics==8.4.7
 
-# Deep Learning - CPU Version
-# Python 3.9 호환 버전
+# Deep Learning (PyTorch)
 torch==2.3.1
 torchvision==0.18.1
 
-# Speech Recognition and Audio Processing
+# Speech / Audio
 transformers==4.35.2
 librosa==0.10.1
 soundfile==0.12.1
 moviepy==1.0.3
 
 # Utilities
-Pillow==10.1.0
+Pillow==10.2.0
 requests==2.31.0
-
-# Optional: Development and Testing
-# pytest==7.4.3
-# pytest-asyncio==0.21.1
-# httpx==0.25.2
