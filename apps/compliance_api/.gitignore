@@ -1,6 +1,7 @@
 # 환경 변수 및 비밀 키
 .env
 venv_311/
+apps/compliance_api/venv_311/
 .git/
 
 # 데이터베이스 및 업로드 파일
@@ -11,6 +12,7 @@ uploads/
 # Vector DB (Chroma) local data
 vector_db/
 **/vector_db/
+apps/compliance_api/vector_db/
 
 # Chroma artifacts
 *.sqlite3
