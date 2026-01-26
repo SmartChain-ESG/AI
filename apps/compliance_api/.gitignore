@@ -1,1 +1,17 @@
+# 환경 변수 및 비밀 키
 .env
+
+# 데이터베이스 및 업로드 파일
+*.db
+uploads/
+
+# 파이썬 관련
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# 기타 설정
+.vscode/
+.idea/

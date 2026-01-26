@@ -1,43 +1,32 @@
-# app/services/ai_service.py
+# app/services/ai_service.py (업데이트 버전)
 from openai import AsyncOpenAI
 import json
 from app.core.config import settings
-from app.logic.subcontract import get_rules_text
+from app.logic.subcontract import get_detailed_rules_prompt # 로직 불러오기
 
 client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 async def analyze_risk(full_text: str):
-    """
-    GPT-4o를 이용해 OCR로 추출된 텍스트에서 법적 리스크를 분석합니다.
-    """
-    rules_context = get_rules_text()
+    # 우리가 정의한 법적 기준 가이드라인 가져오기
+    legal_guideline = get_detailed_rules_prompt()
     
     system_prompt = f"""
-    당신은 대기업 컴플라이언스 전문 변호사 AI입니다.
-    사용자가 업로드한 계약서 내용을 분석하여 '하도급법' 위반 소지가 있는 부분을 찾아내세요.
+    당신은 대한민국 하도급법 전문 변호사입니다.
     
-    [준수해야 할 법적 기준]
-    {rules_context}
+    {legal_guideline}
     
-    반드시 아래 JSON 형식으로만 답변하세요. 다른 말은 하지 마세요.
-    {{
-        "risk_score": (0~100 사이 정수, 높을수록 위험),
-        "summary": "전체적인 분석 요약 (한글)",
-        "risks": [
-            {{
-                "text": "위반이 의심되는 계약서 내 문구 원문",
-                "reason": "위반 사유 및 근거 법령"
-            }}
-        ],
-        "feedback_text": "협력사에 보낼 정중한 수정 요청 메일 본문"
-    }}
+    [응답 지침]
+    1. 분석 결과는 반드시 JSON 형식으로 반환하세요.
+    2. risk_score는 0~100 사이이며, 위반 조항이 명확할수록 높게 측정합니다.
+    3. summary에는 어떤 법적 근거로 리스크가 있는지 요약합니다.
+    4. risks 배열에는 구체적인 위반 의심 문구와 사유를 넣으세요.
     """
 
     response = await client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"다음 계약서 내용을 분석해줘:\n{full_text[:3000]}"} # 토큰 제한 고려
+            {"role": "user", "content": f"다음 계약서 본문을 정밀 분석해줘:\n\n{full_text}"}
         ],
         response_format={"type": "json_object"}
     )
