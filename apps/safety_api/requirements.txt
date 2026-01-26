@@ -1,4 +1,12 @@
-# FastAPI and server dependencies
+# ==================================================
+# TBM Safety Management API - Requirements
+# ==================================================
+# Python: 3.9
+# 팀: 안전보건팀
+# 업데이트: 2026-01-26
+# ==================================================
+
+# FastAPI and Server
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
@@ -6,12 +14,13 @@ pydantic==2.5.0
 
 # Computer Vision
 numpy==1.26.4
-opencv-python==4.8.1.78
+opencv-python-headless==4.8.1.78
 ultralytics==8.4.7
 
-# PyTorch는 이미 설치했으므로 주석 처리
-# torch==2.5.1
-# torchvision==0.20.1
+# Deep Learning - CPU Version
+# Python 3.9 호환 버전
+torch==2.3.1
+torchvision==0.18.1
 
 # Speech Recognition and Audio Processing
 transformers==4.35.2
@@ -20,13 +29,10 @@ soundfile==0.12.1
 moviepy==1.0.3
 
 # Utilities
-Pillow>=10.0.0
+Pillow==10.1.0
+requests==2.31.0
 
-# Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-httpx==0.25.2
-
-# Note: GPU 버전이 필요한 경우:
-# torch, torchvision 라인을 삭제하고
-# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+# Optional: Development and Testing
+# pytest==7.4.3
+# pytest-asyncio==0.21.1
+# httpx==0.25.2

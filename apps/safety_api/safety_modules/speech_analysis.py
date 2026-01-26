@@ -8,6 +8,7 @@ from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 import logging
 import re
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,26 @@ class SpeechAnalyzer:
             from transformers import WhisperProcessor, WhisperForConditionalGeneration
 
             logger.info(f"Loading STT model: {self.stt_model_name}")
-            self.processor = WhisperProcessor.from_pretrained(self.stt_model_name)
-            self.model = WhisperForConditionalGeneration.from_pretrained(self.stt_model_name)
+            
+            # 캐시 디렉토리 설정 (선택사항)
+            # Docker 환경에서는 /app/models/huggingface_cache 사용
+            # 로컬 환경에서는 기본 캐시 사용
+            cache_dir = os.getenv("HF_HOME", None)  # 환경 변수로 설정 가능
+            
+            if cache_dir:
+                logger.info(f"Using Hugging Face cache directory: {cache_dir}")
+                self.processor = WhisperProcessor.from_pretrained(
+                    self.stt_model_name,
+                    cache_dir=cache_dir
+                )
+                self.model = WhisperForConditionalGeneration.from_pretrained(
+                    self.stt_model_name,
+                    cache_dir=cache_dir
+                )
+            else:
+                # 기본 캐시 사용 (~/.cache/huggingface/)
+                self.processor = WhisperProcessor.from_pretrained(self.stt_model_name)
+                self.model = WhisperForConditionalGeneration.from_pretrained(self.stt_model_name)
 
             # Use GPU if available
             if torch.cuda.is_available():
@@ -87,7 +106,10 @@ class SpeechAnalyzer:
             raise
 
         if output_path is None:
-            output_path = str(Path(video_path).with_suffix('.wav'))
+            import tempfile
+            # 임시 파일 생성
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                output_path = tmp_file.name
 
         video = VideoFileClip(video_path)
         audio = video.audio
@@ -200,14 +222,14 @@ class SpeechAnalyzer:
 
     def analyze_video(self, video_path: str,
                      keywords: Optional[List[str]] = None,
-                     min_coverage: float = 80.0) -> Dict:
+                     min_keyword_coverage: float = 80.0) -> Dict:
         """
         Analyze video for safety script compliance.
 
         Args:
             video_path: Path to the video file
             keywords: List of required keywords (uses default if None)
-            min_coverage: Minimum keyword coverage required for compliance (0-100)
+            min_keyword_coverage: Minimum keyword coverage required for compliance (0-100)
 
         Returns:
             Dictionary containing:
@@ -227,14 +249,14 @@ class SpeechAnalyzer:
             keyword_analysis = self.check_keywords(transcription, keywords)
 
             # Determine overall compliance
-            compliant = keyword_analysis['keyword_coverage'] >= min_coverage
+            compliant = keyword_analysis['keyword_coverage'] >= min_keyword_coverage
 
             result = {
                 'transcription': transcription,
                 'keyword_analysis': keyword_analysis,
                 'compliant': compliant,
                 'audio_path': audio_path,
-                'min_coverage_required': min_coverage
+                'min_coverage_required': min_keyword_coverage
             }
 
             logger.info(f"Speech analysis complete. Compliant: {compliant}")
@@ -275,7 +297,10 @@ class SpeechAnalyzer:
                 segment_audio = audio_array[start_sample:end_sample]
 
                 # Save segment temporarily
-                segment_path = f"temp_segment_{start_sample}.wav"
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                    segment_path = tmp_file.name
+                
                 import soundfile as sf
                 sf.write(segment_path, segment_audio, sampling_rate)
 

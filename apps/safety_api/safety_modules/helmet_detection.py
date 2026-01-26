@@ -40,7 +40,7 @@ class HelmetDetector:
     """
     Detects safety helmets and classifies whether persons are wearing them.
     
-    Current: Uses YOLOv8 for person detection + color-based helmet detection
+    Current: Uses yolo26n for person detection + color-based helmet detection
     Future: Will use custom-trained helmet detection model
     """
 
@@ -65,6 +65,10 @@ class HelmetDetector:
             2: 'person'
         }
 
+        # 모델 저장 디렉토리 (Docker: /app/models, 로컬: ./models)
+        models_dir = Path("/app/models") if Path("/app/models").exists() else Path("./models")
+        models_dir.mkdir(parents=True, exist_ok=True)
+
         try:
             from ultralytics import YOLO
             if model_path and Path(model_path).exists():
@@ -73,11 +77,30 @@ class HelmetDetector:
                 self.use_custom_model = True
                 logger.info(f"✅ Loaded custom helmet detection model from {model_path}")
             else:
-                # 기본 YOLO 모델 사용 (임시 - 색상 기반 헬멧 감지)
-                self.model = YOLO('yolov8n.pt')
+                # 기본 YOLO 모델을 models 폴더에서 로드
+                default_model_path = models_dir / 'yolo26n.pt'
+                
+                if default_model_path.exists():
+                    # 이미 다운로드된 모델 사용
+                    self.model = YOLO(str(default_model_path))
+                    logger.info(f"⚠️  Loaded yolo26n from {default_model_path} (color-based helmet detection)")
+                else:
+                    # 처음 실행: 다운로드 후 models 폴더로 이동
+                    logger.info("Downloading yolo26n model...")
+                    self.model = YOLO('yolo26n.pt')
+                    
+                    # 다운로드된 모델을 models 폴더로 이동
+                    current_model = Path('yolo26n.pt')
+                    if current_model.exists():
+                        import shutil
+                        shutil.move(str(current_model), str(default_model_path))
+                        logger.info(f"Moved model to {default_model_path}")
+                    
+                    logger.info("⚠️  Using color-based helmet detection (temporary)")
+                
                 self.use_custom_model = False
-                logger.info("⚠️  Using default YOLOv8n with color-based helmet detection (temporary)")
                 logger.info("📝 To use custom model: train helmet detection model and provide path")
+                
         except ImportError:
             logger.error("ultralytics package not installed. Please install: pip install ultralytics")
             raise
@@ -215,13 +238,12 @@ class HelmetDetector:
                         
                         detection = {
                             'bbox': [float(x1), float(y1), float(x2), float(y2)],
-                            'confidence': float(helmet_conf if has_helmet else person_conf),
                             'class_id': int(0 if has_helmet else 1),
-                            'class_name': str('helmet' if has_helmet else 'no-helmet'),
+                            'class_name': 'helmet' if has_helmet else 'no-helmet',
                             'person_confidence': float(person_conf),
                             'helmet_confidence': float(helmet_conf)
                         }
-                        
+
                         if has_helmet:
                             helmets.append(detection)
                         else:
