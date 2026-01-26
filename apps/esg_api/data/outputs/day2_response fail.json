@@ -1,0 +1,65 @@
+{
+  "draft_id": "string",
+  "status": "FAIL",
+  "triage": {
+    "files": [
+      {
+        "file_id": "af2ed7240465",
+        "file_name": "E_electricity_usage_Q4_2025_current_spike_1012_1019.xlsx",
+        "file_path": "tmp_uploads/af2ed7240465_E_electricity_usage_Q4_2025_current_spike_1012_1019.xlsx",
+        "ext": "xlsx",
+        "kind": "XLSX"
+      }
+    ]
+  },
+  "slot_map": [
+    {
+      "file_id": "af2ed7240465",
+      "slot_name": "electricity_usage",
+      "reason": "XLSX 정형 전력 사용량 증빙으로 가정(데모 더미 슬롯팅)",
+      "confidence": 0.85
+    }
+  ],
+  "extracted": [
+    {
+      "file_id": "af2ed7240465",
+      "slot_name": "electricity_usage",
+      "period_start": "2025-10-12",
+      "period_end": "2025-10-19",
+      "value": 3991.375,
+      "unit": "kWh",
+      "evidence_ref": "EV::XLSX::af2ed7240465::sheet:electricity_usage_Q4!B2:B999 (spike window 10/12~10/19)"
+    }
+  ],
+  "issues": [
+    {
+      "level": "FAIL",
+      "code": "ANOMALY_SPIKE_WINDOW",
+      "message": "10/12~10/19 구간 평균 전력 사용량이 기준 임계값을 초과했습니다.",
+      "file_id": "af2ed7240465",
+      "evidence_ref": "EV::XLSX::af2ed7240465::sheet:electricity_usage_Q4!B2:B999 (spike window 10/12~10/19)"
+    }
+  ],
+  "questions": [
+    "10/12~10/19 전력 급증 사유를 확인할 수 있는 설비 가동 기록 또는 추가 계측 자료를 제출해 주세요."
+  ],
+  "summary_cards": [
+    {
+      "audience": "APPROVER",
+      "lines": [
+        "검증 상태: FAIL",
+        "FAIL 1건 / WARN 0건",
+        "주요 이슈는 전력 급증 구간(10/12~10/19) 및 윤리 문서 승인정보 누락입니다.",
+        "보완요청 문구가 자동 생성되었습니다."
+      ]
+    },
+    {
+      "audience": "PRIME",
+      "lines": [
+        "제출 검증 결과: FAIL",
+        "근거(evidence_ref) 기반으로 이슈를 추적할 수 있습니다.",
+        "보완요청이 필요한 항목이 존재합니다(자동 생성)."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "draft_id": "string",
+  "status": "FAIL",
+  "issues": [
+    {
+      "level": "FAIL",
+      "code": "ANOMALY_SPIKE_RATIO",
+      "message": "급증 구간 평균이 평시 대비 4.65배로 기준(1.8배) 초과입니다.",
+      "file_id": "0976159e3a8b",
+      "evidence_ref": "EV|0976159e3a8b|XLSX|sheet:* (date/electricity_kwh, Q4 baseline + spike 10/12~10/19)",
+      "slot_name": "electricity_usage_2025",
+      "meta": {
+        "spike_avg": 3991.375,
+        "normal_avg": 858.5595238095239,
+        "spike_ratio": 4.648920534117223
+      }
+    },
+    {
+      "level": "OK",
+      "code": "ISO_EXISTS_OK",
+      "message": "ISO 45001 문서가 제출되었습니다(존재 확인).",
+      "file_id": "70a3503f5ed6",
+      "evidence_ref": "EV|70a3503f5ed6|PDF|page:1 (demo_exists)",
+      "slot_name": "iso_45001",
+      "meta": {
+        "note": "Day3: content parsing later"
+      }
+    },
+    {
+      "level": "WARN",
+      "code": "CANNOT_VERIFY_APPROVAL_INFO",
+      "message": "행동강령 문서의 승인일/결의 주체 등 핵심 승인정보를 Day3에서 확인할 수 없습니다(OCR/파싱 전). 최신 승인본 정보가 포함된 파일 제출을 권장합니다.",
+      "file_id": "256633cf256c",
+      "evidence_ref": "EV|256633cf256c|IMAGE|page:1 bbox:(demo_placeholder)",
+      "slot_name": "code_of_conduct",
+      "meta": {
+        "note": "Day3: OCR later"
+      }
+    }
+  ]
+}

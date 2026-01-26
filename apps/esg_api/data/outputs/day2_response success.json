@@ -1,0 +1,63 @@
+{
+  "draft_id": "string",
+  "status": "OK",
+  "triage": {
+    "files": [
+      {
+        "file_id": "2886dcf62a00",
+        "file_name": "E_electricity_usage_Q4_2024_baseline_spikeScenario.xlsx",
+        "file_path": "tmp_uploads/2886dcf62a00_E_electricity_usage_Q4_2024_baseline_spikeScenario.xlsx",
+        "ext": "xlsx",
+        "kind": "XLSX"
+      }
+    ]
+  },
+  "slot_map": [
+    {
+      "file_id": "2886dcf62a00",
+      "slot_name": "electricity_usage",
+      "reason": "XLSX 정형 전력 사용량 증빙으로 가정(데모 더미 슬롯팅)",
+      "confidence": 0.85
+    }
+  ],
+  "extracted": [
+    {
+      "file_id": "2886dcf62a00",
+      "slot_name": "electricity_usage",
+      "period_start": "2024-10-12",
+      "period_end": "2024-10-19",
+      "value": 813.375,
+      "unit": "kWh",
+      "evidence_ref": "EV::XLSX::2886dcf62a00::sheet:electricity_usage_Q4!B2:B999 (spike window 10/12~10/19)"
+    }
+  ],
+  "issues": [
+    {
+      "level": "OK",
+      "code": "SPIKE_WINDOW_OK",
+      "message": "급증 구간 임계값 이내입니다.",
+      "file_id": "2886dcf62a00",
+      "evidence_ref": "EV::XLSX::2886dcf62a00::sheet:electricity_usage_Q4!B2:B999 (spike window 10/12~10/19)"
+    }
+  ],
+  "questions": [],
+  "summary_cards": [
+    {
+      "audience": "APPROVER",
+      "lines": [
+        "검증 상태: OK",
+        "FAIL 0건 / WARN 0건",
+        "주요 이슈는 전력 급증 구간(10/12~10/19) 및 윤리 문서 승인정보 누락입니다.",
+        "보완요청 문구가 자동 생성되었습니다."
+      ]
+    },
+    {
+      "audience": "PRIME",
+      "lines": [
+        "제출 검증 결과: OK",
+        "근거(evidence_ref) 기반으로 이슈를 추적할 수 있습니다.",
+        "보완요청이 필요한 항목이 존재합니다(자동 생성)."
+      ]
+    }
+  ]
+}
