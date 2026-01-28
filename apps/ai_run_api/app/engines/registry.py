@@ -1,4 +1,8 @@
-"""도메인별 엔진 디스패치 — slots/rules를 domain 문자열로 가져온다."""
+# app/engines/registry.py
+
+"""
+도메인별 엔진 디스패치 — slots/rules를 domain 문자열로 가져온다.
+"""
 
 from __future__ import annotations
 

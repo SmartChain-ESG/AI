@@ -1,4 +1,7 @@
-"""Submit 파이프라인 — 6단계 (기획서 §4.2).
+# app/pipeline/submit.py
+
+"""
+Submit 파이프라인 — 6단계 (기획서 §4.2).
 
 (1) TRIAGE — 파일 분류 + 열 수 있는지 체크
 (2) SLOT APPLY — slot_hint 적용
@@ -128,14 +131,19 @@ async def _extract_and_analyse(
         result.update(extracted)
         result["extras"] = extras
 
-    # ── 슬롯별 세부 검증 (도메인 validators) ──
+    # ── 슬롯별 세부 검증 (도메인 validators) ── 
+    # 250128 이종헌 reason 중복, extra_reasons None도 안전하게 처리
     validator = _get_slot_validator(domain)
     if validator is not None:
-        extra_reasons = validator.validate_slot(slot_name, file_type, result)
-        for r in extra_reasons:
-            if r not in result.get("reasons", []):
-                result.setdefault("reasons", []).append(r)
-
+        try:
+            extra_reasons = validator.validate_slot(slot_name, file_type, result) or []
+            if extra_reasons:
+                result.setdefault("reasons", [])
+                for r in extra_reasons:
+                    if r not in result["reasons"]:
+                        result["reasons"].append(r)
+        except Exception:
+            pass       
     return result
 
 
