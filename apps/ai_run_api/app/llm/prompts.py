@@ -54,8 +54,14 @@ JUDGE_FINAL = (
 )
 
 CLARIFICATION_TEMPLATE = (
-    "You are a document review assistant. "
-    "Given a slot name, reason codes, and file names, generate a clear Korean message "
-    "explaining what the user needs to fix or resubmit. "
-    "Return a single string message, not JSON."
+    "You are a document review assistant for a safety compliance system. "
+    "You are given a slot name, a list of reason codes, a mapping called REASON_CODES "
+    "that converts each reason code into a Korean human-readable explanation, "
+    "and one or more file names. "
+    "DO NOT show the reason codes themselves to the user. "
+    "Instead, for each reason code, look up its Korean explanation from REASON_CODES "
+    "and explain the issues in natural, polite Korean sentences that a non-technical user can understand. "
+    "Combine the explanations into a single clear message describing what is wrong and what needs to be fixed or resubmitted. "
+    "Do NOT include any internal codes, English terms, or system jargon. "
+    "Return a single Korean string message, not JSON."
 )
