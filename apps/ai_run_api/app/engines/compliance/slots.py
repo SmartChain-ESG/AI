@@ -101,3 +101,11 @@ def match_filename_to_slot(filename: str) -> tuple[str, float] | None:
                 return slot.name, 1.0
 
     return None
+
+
+def get_required_slot_names() -> list[str]:
+    return [s.name for s in SLOTS if s.required]
+
+
+def get_all_slot_names() -> list[str]:
+    return [s.name for s in SLOTS]

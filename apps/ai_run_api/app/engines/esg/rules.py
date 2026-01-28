@@ -7,7 +7,7 @@ ESG 도메인 — 룰/임계값/간단 파서
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 
 # ── 헤더 기대값 (extract_xlsx가 HEADER_MISMATCH를 만들 때 사용) ──

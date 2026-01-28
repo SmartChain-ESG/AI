@@ -1,14 +1,14 @@
 """Compliance 도메인 — 실제 검증 로직 구현체.
 
-데이터를 분석하여 위반 사항 코드(List[str])를 반환한다.
+데이터를 분석하여 위반 사항 코드(list[str])를 반환한다.
 validate_slot 함수가 외부 진입점 역할을 한다.
 """
 
 from __future__ import annotations
 
 import io
+
 import pandas as pd
-from typing import List
 
 # ---------------------------------------------------------
 # 내부 상수 정의 (검증 기준값)
@@ -22,7 +22,7 @@ _EDU_FAIL_LIMIT = 20.0  # 미이수 허용치(%)
 # 내부 검증 함수 (Private Functions)
 # ---------------------------------------------------------
 
-def _validate_contract_text(text: str) -> List[str]:
+def _validate_contract_text(text: str) -> list[str]:
     """표준 근로/하도급 계약서 텍스트 검증"""
     reasons = []
     
@@ -38,7 +38,7 @@ def _validate_contract_text(text: str) -> List[str]:
     return reasons
 
 
-def _validate_privacy_education(extracted: dict, file_type: str) -> List[str]:
+def _validate_privacy_education(extracted: dict, file_type: str) -> list[str]:
     """개인정보 교육 이수율 검증 (Excel/PDF 공용 로직)"""
     reasons = []
     total_cnt = 0
@@ -62,19 +62,17 @@ def _validate_privacy_education(extracted: dict, file_type: str) -> List[str]:
         except Exception:
             pass
 
-    # Case B: PDF (OCR Tables 사용)
+    # Case B: PDF (텍스트 기반 키워드 검색)
     elif file_type == "pdf":
-        tables = extracted.get("tables", [])
-        if tables:
-            for row in tables:
-                if not isinstance(row, list) or not row: continue
-                row_str = str(row).upper()
-                
-                if "Y" in row_str or "N" in row_str:
-                    if "이수여부" in row_str: continue 
+        text = extracted.get("text", "")
+        if text:
+            for line in text.split("\n"):
+                line_upper = line.strip().upper()
+                if not line_upper:
+                    continue
+                if "이수" in line or "미이수" in line:
                     total_cnt += 1
-                    # 마지막 컬럼이 N인지 확인
-                    if "N" in str(row[-1]).strip().upper():
+                    if "미이수" in line or "N" in line_upper.split()[-1:]:
                         fail_cnt += 1
 
     if total_cnt == 0:
@@ -88,30 +86,31 @@ def _validate_privacy_education(extracted: dict, file_type: str) -> List[str]:
     return reasons
 
 
-def _validate_fair_trade_checklist(extracted: dict) -> List[str]:
-    """공정거래 점검표 검증 (위험요소 미조치 적발)"""
+def _validate_fair_trade_checklist(extracted: dict) -> list[str]:
+    """공정거래 점검표 검증 (xlsx df_preview 또는 PDF 텍스트 기반)."""
     reasons = []
-    tables = extracted.get("tables", [])
-    
-    if not tables: return reasons
-
-    # [Source: 132] Row 구조: [점검자, 위험요소(Y/N), 조치완료(Y/N), 비고]
-    for row in tables:
-        if not isinstance(row, list) or len(row) < 3:
-            continue
-            
-        risk_found = str(row[1]).strip().upper()
-        action_done = str(row[2]).strip().upper()
-        
-        # Rule: 위험요소(Y)인데 조치완료(N)인 경우
-        if "Y" in risk_found and "N" in action_done:
-            reasons.append("HIGH_RISK_DETECTED")
-            break 
-
+    csv_data = extracted.get("df_preview", "")
+    if csv_data:
+        try:
+            df = pd.read_csv(io.StringIO(csv_data))
+            if df.empty:
+                return reasons
+            # 위험요소/조치완료 컬럼 탐색
+            risk_cols = [c for c in df.columns if "위험" in str(c)]
+            action_cols = [c for c in df.columns if "조치" in str(c) and "완료" in str(c)]
+            if risk_cols and action_cols:
+                for _, row in df.iterrows():
+                    risk_val = str(row[risk_cols[0]]).strip().upper()
+                    action_val = str(row[action_cols[0]]).strip().upper()
+                    if "Y" in risk_val and "N" in action_val:
+                        reasons.append("HIGH_RISK_DETECTED")
+                        break
+        except Exception:
+            pass
     return reasons
 
 
-def _validate_education_plan_text(text: str) -> List[str]:
+def _validate_education_plan_text(text: str) -> list[str]:
     """교육 계획서 텍스트 검증"""
     reasons = []
     missing_cnt = 0
@@ -137,7 +136,7 @@ def validate_slot(
 ) -> list[str]:
     """
     슬롯명과 파일타입을 보고 내부 검증 함수(_validate_*)를 호출합니다.
-    Return: 검증 실패 사유 코드 리스트 (List[str])
+    Return: 검증 실패 사유 코드 리스트 (list[str])
     """
     extra_reasons: list[str] = []
 

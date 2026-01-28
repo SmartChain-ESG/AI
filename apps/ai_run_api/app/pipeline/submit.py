@@ -103,8 +103,6 @@ async def _extract_and_analyse(
             for d in vision.get("dates", []):
                 if d not in extracted["dates"]:
                     extracted["dates"].append(d)
-            if vision.get("violations"):
-                extracted["reasons"].extend(["VIOLATION_DETECTED"] * 0)  # log only
             if vision.get("scene_description"):
                 extras["scene_description"] = vision["scene_description"]
             extras.update({k: str(v) for k, v in vision.get("extras", {}).items()})
@@ -131,8 +129,13 @@ async def _extract_and_analyse(
         result.update(extracted)
         result["extras"] = extras
 
-    # ── 슬롯별 세부 검증 (도메인 validators) ── 
-    # 250128 이종헌 reason 중복, extra_reasons None도 안전하게 처리
+    # ── 도메인 화이트리스트 필터링 (해당 도메인에 정의된 reason만 유지) ──
+    rules_mod = get_rules_module(domain)
+    allowed_reasons = set(getattr(rules_mod, "REASON_CODES", {}).keys())
+    if allowed_reasons and "reasons" in result:
+        result["reasons"] = [r for r in result["reasons"] if r in allowed_reasons]
+
+    # ── 슬롯별 세부 검증 (도메인 validators) ──
     validator = _get_slot_validator(domain)
     if validator is not None:
         try:
@@ -314,6 +317,25 @@ async def run_submit(req: SubmitRequest) -> SubmitResponse:
     required = slots_mod.get_required_slot_names()
     provided = {h.slot_name for h in req.slot_hint}
     missing = [s for s in required if s not in provided]
+
+    # (4.5) 도메인별 교차 검증 (슬롯 간 비교)
+    cross_validator = _get_slot_validator(req.domain)
+    if cross_validator is not None and hasattr(cross_validator, "esg_cross_checks"):
+        try:
+            cross_results = cross_validator.esg_cross_checks(
+                dict(slot_groups), req.period_start, req.period_end,
+            )
+            for cr in cross_results:
+                slot_results.append(SlotResult(
+                    slot_name=cr["slot_name"],
+                    verdict=cr.get("verdict", "NEED_FIX"),
+                    reasons=cr.get("reasons", []),
+                    file_ids=[],
+                    file_names=[],
+                    extras=cr.get("extras", {}),
+                ))
+        except Exception:
+            pass
 
     # (5) CLARIFY
     clarifications = await _generate_clarifications(slot_results)
