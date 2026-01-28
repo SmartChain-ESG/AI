@@ -38,6 +38,21 @@ from app.schemas.run import (
 )
 from app.storage.downloader import download_file
 
+# 도메인별 슬롯 검증 디스패치
+_DOMAIN_VALIDATORS: dict[str, object] = {}
+
+
+def _get_slot_validator(domain: str):
+    """도메인별 validators 모듈을 lazy-load."""
+    if domain not in _DOMAIN_VALIDATORS:
+        try:
+            import importlib
+            mod = importlib.import_module(f"app.engines.{domain}.validators")
+            _DOMAIN_VALIDATORS[domain] = mod
+        except ModuleNotFoundError:
+            _DOMAIN_VALIDATORS[domain] = None
+    return _DOMAIN_VALIDATORS[domain]
+
 
 # ── (3) EXTRACT + LLM 보강 ────────────────────────────────
 async def _extract_and_analyse(
@@ -112,6 +127,14 @@ async def _extract_and_analyse(
             pass
         result.update(extracted)
         result["extras"] = extras
+
+    # ── 슬롯별 세부 검증 (도메인 validators) ──
+    validator = _get_slot_validator(domain)
+    if validator is not None:
+        extra_reasons = validator.validate_slot(slot_name, file_type, result)
+        for r in extra_reasons:
+            if r not in result.get("reasons", []):
+                result.setdefault("reasons", []).append(r)
 
     return result
 
