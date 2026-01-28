@@ -1,119 +1,99 @@
 # app/engines/esg/rules.py
 
 """
-ESG 도메인 — 룰/임계값/간단 파서
+ESG 도메인 — rules 메타(헤더 기대치/사유코드)
+
+주의:
+- 현재 submit 파이프라인은 XLSX 추출 시 EXPECTED_HEADERS만 참조한다.
+- 따라서 여기서는 "너무 빡센 헤더 강제"를 피하고,
+  최소한의 키워드 수준으로만 기대치를 둔다.
+- 실제 정교한 검증(E3/E9 등)은 (추후) esg/validators.py에서 수행하는 게 맞다.
 """
 
 from __future__ import annotations
 
-import re
-from datetime import date, datetime
-from typing import Any
 
-# ── 헤더 기대값 (extract_xlsx가 HEADER_MISMATCH를 만들 때 사용) ──
+# -------------------------------------------------------
+# XLSX 최소 헤더 기대치(너무 엄격하면 실데이터에서 다 깨짐)
+# - extractor가 "부분 포함"으로 검사한다는 가정 하에 키워드 중심으로 둔다.
+# - 만약 extractor가 "정확 일치"를 강제한다면:
+#     => 여기 목록을 빈 리스트로 두고, 검증은 validators에서 하는 편이 안전.
+# -------------------------------------------------------
 EXPECTED_HEADERS: dict[str, list[str]] = {
-    # 전기/가스/수도 usage (데모 파일 컬럼 기준)
-    "esg.energy.electricity.usage_xlsx": ["date", "Usage_kWh"],
-    "esg.energy.gas.usage_xlsx": ["timestamp", "flow_m3"],
-    "esg.energy.water.usage_xlsx": ["date", "Usage_m3"],
-
-    # 배포 로그(예시)
-    "esg.governance.distribution_log_xlsx": ["문서명", "버전", "개정일"],
+    # 전기 사용량: date + kwh 계열
+    "esg.energy.electricity.usage": ["date", "kwh"],
+    # 전기 고지서(PDF)는 헤더 검사 안 함
+    "esg.energy.electricity.bill": [],
+    # 가스 사용량: timestamp + m3 or energy
+    "esg.energy.gas.usage": ["time", "m3"],
+    "esg.energy.gas.bill": [],
+    # 수도 사용량
+    "esg.energy.water.usage": ["date", "m3"],
+    "esg.energy.water.bill": [],
+    # GHG 근거 문서(PDF)라서 헤더 없음
+    "esg.energy.ghg.evidence": [],
+    # 유해물질 목록(있을 때): material + qty 계열
+    "esg.hazmat.inventory": ["물질", "수량"],
+    # 폐기 목록
+    "esg.hazmat.disposal.list": ["물질", "처리"],
+    # MSDS/폐기증빙/윤리문서/서약서는 PDF/IMG이므로 헤더 없음
+    "esg.hazmat.msds": [],
+    "esg.hazmat.disposal.evidence": [],
+    "esg.ethics.code": [],
+    "esg.ethics.distribution.log": ["배포", "확인"],
+    "esg.ethics.pledge": [],
+    "esg.ethics.poster.image": [],
 }
 
+
+# -------------------------------------------------------
+# reason code 표준(가능한 한 공통 코드 유지)
+# -------------------------------------------------------
 REASON_CODES: dict[str, str] = {
     # 공통
     "MISSING_SLOT": "필수 슬롯 누락",
-    "HEADER_MISMATCH": "엑셀 컬럼 불일치",
     "PARSE_FAILED": "파싱 실패",
+    "HEADER_MISMATCH": "필수 컬럼(헤더) 불일치",
+    "DATE_MISMATCH": "기간 불일치",
+    "UNIT_MISSING": "단위 누락",
+    "EVIDENCE_MISSING": "근거문서 누락",
+    "OCR_FAILED": "OCR 판독 불가",
 
-    # E1
-    "E1_NEGATIVE_OR_ZERO": "음수/0 사용량 존재",
-    "E1_DATE_PARSE_FAIL": "날짜 파싱 실패",
-    "E1_DATE_DUPLICATED": "날짜 중복",
-    "E1_UNIT_MISSING": "단위 추정 불가",
+    # 에너지(E)
+    "E1_NEGATIVE_OR_ZERO": "사용량이 0 또는 음수",
+    "E1_DATE_PARSE_FAILED": "날짜 파싱 실패",
+    "E1_DUPLICATE_DATE": "날짜 중복",
+    "E1_GAP_DETECTED": "기간 연속성 결함",
+    "E2_SPIKE_DETECTED": "사용량 급증/급감 이상치",
+    "E3_BILL_MISMATCH": "고지서 합계와 사용량 합계 불일치",
+    "E3_BILL_PERIOD_UNCERTAIN": "고지서 기간 추출 불확실",
+    "E4_GHG_EVIDENCE_MISSING": "온실가스 산정 근거 문서 누락",
 
-    # E2
-    "E2_SPIKE_WARN": "급증/급감 감지(WARN)",
-    "E2_SPIKE_FAIL": "급증/급감 감지(FAIL)",
-
-    # E3
-    "E3_BILL_FIELDS_MISSING": "고지서에서 기간/합계 추출 실패",
-    "E3_BILL_MISMATCH": "고지서 합계와 XLSX 합계 불일치",
-
-    # E4
-    "E4_GHG_EVIDENCE_MISSING": "온실가스 산정 근거자료 누락",
-
-    # E5~E7
-    "E5_MSDS_MISSING": "목록 대비 MSDS 누락",
+    # 유해물질(H)
+    "E5_MSDS_MISSING": "유해물질 목록 대비 MSDS 누락",
+    "E6_STOCK_SPIKE": "유해물질 수량 급증",
+    "E6_INSPECTION_OVERDUE": "점검일 경과",
     "E7_DISPOSAL_INCONSISTENT": "폐기/처리 정합성 불일치",
 
-    # E8~E9
-    "E8_REVISION_OLD": "윤리강령 개정일이 오래됨",
-    "E8_SECTION_MISSING": "윤리강령 필수 섹션 누락",
-    "E9_PLEDGE_BEFORE_REVISION": "서약일이 개정일보다 과거",
-    "E9_DISTRIBUTION_LOW_ACK": "배포 확인율 낮음",
-
-    # OCR/이미지
-    "G_OCR_UNREADABLE": "스캔/사진 판독 불가(OCR)",
+    # 윤리(G)
+    "E8_OLD_REVISION": "윤리강령 개정일이 오래됨",
+    "E8_MISSING_SECTIONS": "윤리강령 필수 섹션 누락",
+    "E8_MULTI_VERSION": "여러 버전 동시 제출(혼선 가능)",
+    "E9_NO_DISTRIBUTION_LOG": "배포/수신확인 로그 누락",
+    "E9_NO_PLEDGE": "서약서 누락",
+    "E9_PLEDGE_BEFORE_REVISION": "서약일이 개정일보다 과거(구버전 서약 가능성)",
+    "E9_DISTR_BEFORE_REVISION": "배포일이 개정일보다 과거(구버전 배포 가능성)",
+    "G_OCR_UNREADABLE": "문서 판독 불가(스캔/사진 품질 문제)",
 }
 
 
-def esg_parse_date_any(text: str) -> date | None:
-    """YYYY-MM-DD / YYYY.MM.DD / YYYY/MM/DD 같은 패턴 1개만 뽑기"""
-    if not text:
-        return None
-    m = re.search(r"(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})", text)
-    if not m:
-        return None
-    y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
-    try:
-        return date(y, mo, d)
-    except ValueError:
-        return None
-
-
-def esg_parse_bill_fields(pdf_text: str) -> dict[str, Any]:
-    """
-    고지서에서 기간/합계 뽑기 (아주 단순한 데모 파서)
-    - 당월 사용량 134,340 kWh
-    - 당월 사용량 18,480 m³
-    """
-    out: dict[str, Any] = {
-        "bill_total": None,
-        "bill_unit": None,
-        "bill_period_start": None,
-        "bill_period_end": None,
-    }
-    if not pdf_text:
-        return out
-
-    # 합계: "당월 사용량 134,340 kWh" / "당월사용량 18,480 m³"
-    m = re.search(r"당월\s*사용량\s*([\d,]+)\s*(kwh|㎾h|m3|m³|㎥)", pdf_text, re.IGNORECASE)
-    if m:
-        out["bill_total"] = float(m.group(1).replace(",", ""))
-        out["bill_unit"] = m.group(2)
-
-    # 기간: "2025.11.01 ~ 2025.11.30" 같은 단순 패턴
-    m2 = re.search(
-        r"(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\s*[~\-]\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})",
-        pdf_text,
-    )
-    if m2:
-        out["bill_period_start"] = esg_parse_date_any(m2.group(1))
-        out["bill_period_end"] = esg_parse_date_any(m2.group(2))
-
-    return out
-
-
-def esg_spike_threshold(ratio: float) -> str | None:
-    """
-    ratio = today / baseline
-    - WARN: >= 1.25 or <= 0.75
-    - FAIL: >= 1.50 or <= 0.50
-    """
-    if ratio >= 1.50 or ratio <= 0.50:
-        return "FAIL"
-    if ratio >= 1.25 or ratio <= 0.75:
-        return "WARN"
-    return None
+# -------------------------------------------------------
+# (옵션) 데모용 정책값(나중에 validators에서 사용)
+# -------------------------------------------------------
+POLICY: dict[str, object] = {
+    "E3_TOLERANCE_ELECTRICITY_PCT": 1.0,
+    "E3_TOLERANCE_GAS_PCT": 2.0,
+    "E3_TOLERANCE_WATER_PCT": 2.0,
+    "E9_CONFIRM_RATE_WARN": 80,
+    "E9_CONFIRM_RATE_FAIL": 60,
+}
