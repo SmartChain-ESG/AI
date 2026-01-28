@@ -1,4 +1,7 @@
-"""Preview 파이프라인 (기획서 §4.1).
+# app/pipeline/preview.py
+
+"""
+Preview 파이프라인 (기획서 §4.1).
 
 1. 입력 검증
 2. 파일명 키워드 매칭 → 슬롯 추정
