@@ -1,21 +1,71 @@
-.env
-.DS_Store
+# =========================
+# Python Virtual Envs
+# =========================
+venv/
+.venv/
+*/venv/
+*/.venv/
 
-# Python cache
+# =========================
+# Python cache / build
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
+.pytest_cache/
+.mypy_cache/
+.pytype/
 
-# Env
-.venv/
+# =========================
+# Environment variables
+# =========================
 .env
 .env.*
+!.env.example
 
-# Upload / outputs (테스트 산출물)
-tmp_uploads/
-data/outputs/
-data/*.db
+# =========================
+# Logs & runtime
+# =========================
+*.log
+logs/
+*.pid
 
-# OS
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.iml
+
+# =========================
+# OS files
+# =========================
 .DS_Store
+Thumbs.db
+
+# =========================
+# Docker
+# =========================
+*.tar
+
+# =========================
+# Data / temp
+# =========================
+data/
+tmp/
+.cache/
+
+# =========================
+# Model / weight files
+# =========================
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.weights
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
