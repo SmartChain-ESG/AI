@@ -29,6 +29,7 @@ from app.llm.prompts import (
     IMAGE_VISION_USER,
     JUDGE_FINAL,
     PDF_ANALYSIS,
+    get_prompt,
 )
 from app.pipeline.triage import triage_files
 from app.schemas.run import (
@@ -78,7 +79,7 @@ async def _extract_and_analyse(
         # LLM 보강 (GPT-4o-mini)
         extras: dict[str, str] = {}
         try:
-            raw = await ask_llm(PDF_ANALYSIS, extracted["text"][:4000], heavy=False)
+            raw = await ask_llm(get_prompt(PDF_ANALYSIS, domain), extracted["text"][:4000], heavy=False)
             llm = json.loads(raw)
             for d in llm.get("dates", []):
                 if d not in extracted["dates"]:
@@ -98,7 +99,7 @@ async def _extract_and_analyse(
         # GPT-4o Vision 보강
         extras = {}
         try:
-            raw = await ask_llm_vision(IMAGE_VISION, IMAGE_VISION_USER, data, fmt)
+            raw = await ask_llm_vision(get_prompt(IMAGE_VISION, domain), get_prompt(IMAGE_VISION_USER, domain), data, fmt)
             vision = json.loads(raw)
             for d in vision.get("dates", []):
                 if d not in extracted["dates"]:
@@ -118,7 +119,7 @@ async def _extract_and_analyse(
         # LLM 보강 (GPT-4o-mini)
         extras = {}
         try:
-            raw = await ask_llm(DATA_ANALYSIS, extracted["df_preview"], heavy=False)
+            raw = await ask_llm(get_prompt(DATA_ANALYSIS, domain), extracted["df_preview"], heavy=False)
             llm = json.loads(raw)
             for d in llm.get("dates", []):
                 if d not in extracted["dates"]:
@@ -226,6 +227,7 @@ async def _generate_clarifications(
 # ── (6) FINAL AGGREGATE ───────────────────────────────
 async def _final_aggregate(
     package_id: str,
+    domain: str,
     slot_results: list[SlotResult],
     missing_slots: list[str],
     clarifications: list[Clarification],
@@ -260,7 +262,7 @@ async def _final_aggregate(
     judge_input = "\n".join(summary_lines)
 
     try:
-        raw = await ask_llm(JUDGE_FINAL, judge_input, heavy=True)
+        raw = await ask_llm(get_prompt(JUDGE_FINAL, domain), judge_input, heavy=True)
         llm_result = json.loads(raw)
         why = llm_result.get("why", "")
         risk_level = llm_result.get("risk_level", risk_level)
@@ -343,6 +345,7 @@ async def run_submit(req: SubmitRequest) -> SubmitResponse:
     # (6) FINAL AGGREGATE
     return await _final_aggregate(
         package_id=req.package_id,
+        domain=req.domain,
         slot_results=slot_results,
         missing_slots=missing,
         clarifications=clarifications,
