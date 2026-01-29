@@ -20,7 +20,7 @@ EXPECTED_HEADERS: dict[str, list[str]] = {
     "safety.fire.inspection": ["월", "점검항목", "수량", "결과", "조치내용", "조치기한", "증빙사진ID"],
 
     # 20251126_성광벤드_위험성평가서.xlsx 기준
-    "safety.risk.assessment": ["순번", "작업명(Activity)", "유해위험요인", "감소대책(Action)", "담당자", "점검일", "판정", "테스트 목적"],
+    "safety.risk.assessment": ["순번", "작업명(Activity)", "유해위험요인", "감소대책(Action)", "담당자", "점검일"],
 
     "safety.checklist": ["점검항목", "결과", "날짜"],
 }

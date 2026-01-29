@@ -216,8 +216,14 @@ def validate_slot(
 
     elif slot_name == "safety.management.system" and file_type == "pdf":
         extra_reasons = _validate_management_system_pdf(extracted.get("text", ""))
+        # 관리체계 매뉴얼은 서명란 검사 불필요 → extractor가 붙인 SIGNATURE_MISSING 제거
+        if "reasons" in extracted:
+            extracted["reasons"] = [r for r in extracted["reasons"] if r != "SIGNATURE_MISSING"]
 
     elif slot_name == "safety.fire.inspection":
+        # 점검표는 서명란 검사 불필요
+        if "reasons" in extracted:
+            extracted["reasons"] = [r for r in extracted["reasons"] if r != "SIGNATURE_MISSING"]
         if file_type == "xlsx":
             extra_reasons = _validate_fire_inspection_xlsx(extracted.get("df_preview", ""))
         elif file_type == "pdf":

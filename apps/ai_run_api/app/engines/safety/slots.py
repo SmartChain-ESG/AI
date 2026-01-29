@@ -17,14 +17,7 @@ class SlotDef(NamedTuple):
 
 
 SLOTS: list[SlotDef] = [
-    # (선택) TBM — 이번 테스트 업로드에는 없음
-    SlotDef(
-        name="safety.tbm",
-        required=False,
-        patterns=[
-            re.compile(r"(?i)\btbm\b|tool.?box.?meet|작업전.?회의|TBM"),
-        ],
-    ),
+
 
     # 교육 이수 현황 (xlsx)
     SlotDef(
@@ -62,15 +55,6 @@ SLOTS: list[SlotDef] = [
         ],
     ),
 
-    # 일반 점검표(선택)
-    SlotDef(
-        name="safety.checklist",
-        required=False,
-        patterns=[
-            re.compile(r"(?i)safety.?check|안전.?점검|점검표"),
-        ],
-    ),
-
     # 현장 사진(선택) — 이미지 묶음/단일
     SlotDef(
         name="safety.site.photos",
@@ -95,6 +79,14 @@ SLOTS: list[SlotDef] = [
         required=False,
         patterns=[
             re.compile(r"(?i)edu.*photo|교육.*사진|교육일.*사진|교육현장"),
+        ],
+    ),
+        # (선택) TBM — 이번 테스트 업로드에는 없음
+    SlotDef(
+        name="safety.tbm",
+        required=False,
+        patterns=[
+            re.compile(r"(?i)\btbm\b|tool.?box.?meet|작업전.?회의|TBM"),
         ],
     ),
 ]

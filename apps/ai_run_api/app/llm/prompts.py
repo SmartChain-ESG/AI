@@ -26,7 +26,7 @@ _IMAGE_JSON_SCHEMA = (
     '"detected_objects": ["object1", ...], '
     '"violations": ["description", ...], '
     '"scene_description": "one-line description", '
-    '"person_count": <integer or null>, '
+    '"person_count": <integer, 0 if none visible>, '
     '"anomalies": ["issue1", ...], '
     '"extras": {"key": "value", ...}}\n'
 )
@@ -45,12 +45,19 @@ PDF_ANALYSIS: dict[str, str] = {
         "You are a safety document analyst specialising in industrial safety (산업안전). "
         "Focus on: safety management plans, risk assessments, fire inspection reports, "
         "training records, and regulatory compliance signatures.\n"
+        "IMPORTANT — be LENIENT. Only report anomalies for clearly wrong data: "
+        "missing required sections, contradictory information, or impossible values. "
+        "Do NOT flag dates. Do NOT flag values that meet thresholds. "
+        "When in doubt, do NOT flag. Return empty anomalies list.\n"
         f"Given PDF text, return JSON only:\n{_PDF_JSON_SCHEMA}{_JSON_TAIL}"
     ),
     "compliance": (
         "You are a corporate compliance document analyst. "
         "Focus on: employment contracts, subcontract terms, privacy policies, "
         "fair-trade checklists, and mandatory training plans.\n"
+        "IMPORTANT: Only report anomalies for genuine violations — missing clauses, "
+        "unsigned sections, or data inconsistencies. "
+        "Do NOT flag items that meet all required criteria.\n"
         f"Given PDF text, return JSON only:\n{_PDF_JSON_SCHEMA}{_JSON_TAIL}"
     ),
     "esg": (
@@ -69,12 +76,22 @@ DATA_ANALYSIS: dict[str, str] = {
         "You are a safety data analyst. "
         "Focus on: education completion rates, risk assessment tables, "
         "fire inspection schedules, and safety checklist data.\n"
+        "IMPORTANT — be LENIENT. The following are handled by rules, NOT by you:\n"
+        "- Education completion rates (do NOT flag any rate values)\n"
+        "- Dates (do NOT flag any date issues)\n"
+        "- Signatures (do NOT flag signature presence/absence)\n"
+        "Only flag: clearly impossible numeric values, contradictory data, or corrupted content.\n"
+        "When in doubt, do NOT flag. Return empty anomalies list.\n"
         f"Given spreadsheet CSV rows, return JSON only:\n{_DATA_JSON_SCHEMA}{_JSON_TAIL}"
     ),
     "compliance": (
         "You are a compliance data analyst. "
         "Focus on: contract payment ratios, training completion lists, "
         "privacy education records, and fair-trade checklist items.\n"
+        "IMPORTANT thresholds — only flag anomalies that VIOLATE these rules:\n"
+        "- Education completion rate: FAIL if non-completion > 20%. Otherwise NORMAL.\n"
+        "- Fair-trade: flag only if risk found (Y) AND action not completed (N).\n"
+        "- Do NOT flag values that meet all thresholds.\n"
         f"Given spreadsheet CSV rows, return JSON only:\n{_DATA_JSON_SCHEMA}{_JSON_TAIL}"
     ),
     "esg": (
@@ -114,12 +131,14 @@ IMAGE_VISION_USER: dict[str, str] = {
         "Analyze this safety inspection image. "
         "Identify all dates, safety equipment/objects, any violations, "
         "and describe the scene. "
-        "If people are visible, count the total number of people (person_count)."
+        "ALWAYS count the number of people visible in the image and return it as person_count (integer). "
+        "If no people are visible, return person_count: 0. Never return null for person_count."
     ),
     "compliance": (
         "Analyze this compliance document image. "
         "Identify dates, stamps, seals, signatures, and any irregularities. "
-        "If people are visible, count the total number of people (person_count)."
+        "ALWAYS count the number of people visible in the image and return it as person_count (integer). "
+        "If no people are visible, return person_count: 0. Never return null for person_count."
     ),
     "esg": (
         "Analyze this ESG evidence image. "

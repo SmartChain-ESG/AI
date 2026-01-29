@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re as _re
 from datetime import date
 
 from app.engines.registry import get_rules_module, get_slots_module
@@ -41,6 +42,17 @@ from app.schemas.run import (
     SubmitResponse,
 )
 from app.storage.downloader import download_file
+
+
+def _safe_json(raw: str) -> dict:
+    """LLM 응답에서 JSON을 안전하게 파싱. 마크다운 코드블록 제거."""
+    text = raw.strip()
+    # ```json ... ``` 또는 ``` ... ``` 제거
+    m = _re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if m:
+        text = m.group(1).strip()
+    return json.loads(text)
+
 
 # 도메인별 슬롯 검증 디스패치
 _DOMAIN_VALIDATORS: dict[str, object] = {}
@@ -80,7 +92,7 @@ async def _extract_and_analyse(
         extras: dict[str, str] = {}
         try:
             raw = await ask_llm(get_prompt(PDF_ANALYSIS, domain), extracted["text"][:4000], heavy=False)
-            llm = json.loads(raw)
+            llm = _safe_json(raw)
             for d in llm.get("dates", []):
                 if d not in extracted["dates"]:
                     extracted["dates"].append(d)
@@ -107,7 +119,7 @@ async def _extract_and_analyse(
         extras = {}
         try:
             raw = await ask_llm_vision(get_prompt(IMAGE_VISION, domain), get_prompt(IMAGE_VISION_USER, domain), data, fmt)
-            vision = json.loads(raw)
+            vision = _safe_json(raw)
             for d in vision.get("dates", []):
                 if d not in extracted["dates"]:
                     extracted["dates"].append(d)
@@ -144,7 +156,7 @@ async def _extract_and_analyse(
         extras = {}
         try:
             raw = await ask_llm(get_prompt(DATA_ANALYSIS, domain), extracted["df_preview"], heavy=False)
-            llm = json.loads(raw)
+            llm = _safe_json(raw)
             for d in llm.get("dates", []):
                 if d not in extracted["dates"]:
                     extracted["dates"].append(d)
@@ -248,6 +260,8 @@ async def _generate_clarifications(
             detail_lines.append(f"- 문서 요약: {sr.extras['summary']}")
         if sr.extras.get("detected_objects"):
             detail_lines.append(f"- 감지된 객체: {sr.extras['detected_objects']}")
+        if sr.extras.get("detail"):
+            detail_lines.append(f"- 상세: {sr.extras['detail']}")
         detail_block = "\n".join(detail_lines) if detail_lines else ""
 
         # REASON_CODES 한국어 매핑 전달
@@ -330,7 +344,7 @@ async def _final_aggregate(
 
     try:
         raw = await ask_llm(get_prompt(JUDGE_FINAL, domain), judge_input, heavy=True)
-        llm_result = json.loads(raw)
+        llm_result = _safe_json(raw)
         why = llm_result.get("why", "")
         risk_level = llm_result.get("risk_level", risk_level)
         overall_verdict = llm_result.get("verdict", overall_verdict)
