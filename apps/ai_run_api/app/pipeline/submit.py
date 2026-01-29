@@ -87,7 +87,14 @@ async def _extract_and_analyse(
             if not extracted["signature_detected"] and llm.get("has_signature"):
                 extracted["signature_detected"] = True
                 extracted["reasons"] = [r for r in extracted["reasons"] if r != "SIGNATURE_MISSING"]
-            extras = {k: str(v) for k, v in llm.get("extras", {}).items()}
+            # anomalies → reason + extras 반영
+            anomalies = llm.get("anomalies", [])
+            if anomalies:
+                extracted.setdefault("reasons", []).append("LLM_ANOMALY_DETECTED")
+                extras["anomalies"] = "; ".join(str(a) for a in anomalies)
+            if llm.get("summary"):
+                extras["summary"] = str(llm["summary"])
+            extras.update({k: str(v) for k, v in llm.get("extras", {}).items()})
         except Exception:
             pass
         result.update(extracted)
@@ -104,6 +111,20 @@ async def _extract_and_analyse(
             for d in vision.get("dates", []):
                 if d not in extracted["dates"]:
                     extracted["dates"].append(d)
+            # violations → reason 반영
+            violations = vision.get("violations", [])
+            if violations:
+                extracted.setdefault("reasons", []).append("VIOLATION_DETECTED")
+                extras["violations"] = "; ".join(str(v) for v in violations)
+            # detected_objects → extras
+            objects = vision.get("detected_objects", []) or vision.get("safety_objects", [])
+            if objects:
+                extras["detected_objects"] = ", ".join(str(o) for o in objects)
+            # anomalies → reason 반영
+            anomalies = vision.get("anomalies", [])
+            if anomalies:
+                extracted.setdefault("reasons", []).append("LLM_ANOMALY_DETECTED")
+                extras["anomalies"] = "; ".join(str(a) for a in anomalies)
             if vision.get("scene_description"):
                 extras["scene_description"] = vision["scene_description"]
             extras.update({k: str(v) for k, v in vision.get("extras", {}).items()})
@@ -124,7 +145,17 @@ async def _extract_and_analyse(
             for d in llm.get("dates", []):
                 if d not in extracted["dates"]:
                     extracted["dates"].append(d)
-            extras = {k: str(v) for k, v in llm.get("extras", {}).items()}
+            # missing_fields → reason 반영
+            missing = llm.get("missing_fields", [])
+            if missing:
+                extracted.setdefault("reasons", []).append("LLM_MISSING_FIELDS")
+                extras["missing_fields"] = ", ".join(str(f) for f in missing)
+            # anomalies → reason 반영
+            anomalies = llm.get("anomalies", [])
+            if anomalies:
+                extracted.setdefault("reasons", []).append("LLM_ANOMALY_DETECTED")
+                extras["anomalies"] = "; ".join(str(a) for a in anomalies)
+            extras.update({k: str(v) for k, v in llm.get("extras", {}).items()})
         except Exception:
             pass
         result.update(extracted)
@@ -202,13 +233,38 @@ async def _generate_clarifications(
         reason_text = ", ".join(sr.reasons) if sr.reasons else "확인 필요"
         file_text = ", ".join(sr.file_names) if sr.file_names else "해당 파일"
 
+        # extras에서 구체적 내용 추출
+        detail_lines: list[str] = []
+        if sr.extras.get("anomalies"):
+            detail_lines.append(f"- 이상 징후 상세: {sr.extras['anomalies']}")
+        if sr.extras.get("missing_fields"):
+            detail_lines.append(f"- 누락 항목: {sr.extras['missing_fields']}")
+        if sr.extras.get("violations"):
+            detail_lines.append(f"- 위반 사항: {sr.extras['violations']}")
+        if sr.extras.get("summary"):
+            detail_lines.append(f"- 문서 요약: {sr.extras['summary']}")
+        if sr.extras.get("detected_objects"):
+            detail_lines.append(f"- 감지된 객체: {sr.extras['detected_objects']}")
+        detail_block = "\n".join(detail_lines) if detail_lines else ""
+
+        # REASON_CODES 한국어 매핑 전달
+        from app.engines.registry import get_rules_module as _get_rules
+        try:
+            _rc = getattr(_get_rules(sr.slot_name.split(".")[0]), "REASON_CODES", {})
+        except Exception:
+            _rc = {}
+        rc_text = "\n".join(f"  {k}: {v}" for k, v in _rc.items() if k in sr.reasons)
+
         try:
             user_msg = (
                 f"슬롯: {sr.slot_name}\n"
                 f"사유 코드: {reason_text}\n"
+                f"REASON_CODES 매핑:\n{rc_text}\n"
                 f"파일: {file_text}\n"
-                f"한국어로 협력사에게 보낼 보완요청 문장을 작성해주세요."
             )
+            if detail_block:
+                user_msg += f"구체적 발견 내용:\n{detail_block}\n"
+            user_msg += "위 내용을 바탕으로 한국어로 협력사에게 보낼 보완요청 문장을 작성해주세요. 구체적으로 어떤 항목이 문제인지, 무엇을 수정해야 하는지 명시해주세요."
             message = await ask_llm(CLARIFICATION_TEMPLATE, user_msg, heavy=False)
         except Exception:
             # LLM 실패 시 기본 템플릿
@@ -258,7 +314,15 @@ async def _final_aggregate(
     extras: dict[str, str] = {}
     summary_lines = []
     for sr in slot_results:
-        summary_lines.append(f"[{sr.slot_name}] verdict={sr.verdict}, reasons={sr.reasons}")
+        line = f"[{sr.slot_name}] verdict={sr.verdict}, reasons={sr.reasons}"
+        # extras 상세 내용도 판정에 포함
+        details = []
+        for key in ("anomalies", "violations", "missing_fields", "summary"):
+            if sr.extras.get(key):
+                details.append(f"{key}: {sr.extras[key]}")
+        if details:
+            line += f" | details: {'; '.join(details)}"
+        summary_lines.append(line)
     judge_input = "\n".join(summary_lines)
 
     try:

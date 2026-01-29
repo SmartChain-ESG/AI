@@ -38,6 +38,9 @@ REASON_CODES: dict[str, str] = {
     "DATE_MISMATCH":      "점검/교육/작성일이 제출 기간 밖",
     "SIGNATURE_MISSING":  "확인 서명란 미기재",
     "OCR_FAILED":         "OCR 판독 불가",
+    "LLM_ANOMALY_DETECTED": "AI가 문서 이상 징후를 감지함",
+    "LLM_MISSING_FIELDS":   "AI가 누락 항목을 감지함",
+    "VIOLATION_DETECTED":   "AI가 안전 위반 사항을 감지함",
 
     # ── 교육 이수현황 (safety.education.status) ──
     "LOW_EDUCATION_RATE": "교육 이수율 기준 미달 (80% 미만)",

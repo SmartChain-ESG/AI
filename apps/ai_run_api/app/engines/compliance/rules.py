@@ -38,4 +38,9 @@ REASON_CODES: dict[str, str] = {
 
     # ── 법정의무 교육 계획서 ──
     "MISSING_MANDATORY_TRAINING": "주요 법정의무 교육(개인정보/성희롱/안전 등) 계획 누락",
+
+    # ── LLM 공통 ──
+    "LLM_ANOMALY_DETECTED": "AI가 문서 이상 징후를 감지함",
+    "LLM_MISSING_FIELDS":   "AI가 누락 항목을 감지함",
+    "VIOLATION_DETECTED":   "AI가 위반 사항을 감지함",
 }
