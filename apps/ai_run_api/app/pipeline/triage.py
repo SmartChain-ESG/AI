@@ -1,4 +1,5 @@
-"""Submit Phase 1 — TRIAGE (기획서 §4.2 단계 1).
+"""
+Submit Phase 1 — TRIAGE (기획서 §4.2 단계 1).
 
 파일 확장자/종류 분류 + 열 수 있는지 최소 체크.
 """

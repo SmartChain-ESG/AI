@@ -7,8 +7,9 @@ Submit 파이프라인 — 6단계 (기획서 §4.2).
 (2) SLOT APPLY — slot_hint 적용
 (3) EXTRACT — 파싱/OCR
 (4) VALIDATE — 룰 검증 → slot_results (verdict + reasons)
-(5) CLARIFY — PASS 아닌 것 → 보완요청 문장 생성
-(6) FINAL AGGREGATE — 전체 verdict/risk/why
+(5) CROSS_VALIDATE - 두 파일간 룰 검증
+(6) CLARIFY — PASS 아닌 것 → 보완요청 문장 생성
+(7) FINAL AGGREGATE — 전체 verdict/risk/why
 """
 
 from __future__ import annotations
