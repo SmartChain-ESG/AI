@@ -1,5 +1,3 @@
-# app/engines/esg/slots.py
-
 """
 ESG 도메인 — 슬롯 정의 + 파일명 기반 슬롯 추정기 (Soft Gate 버전)
 
@@ -16,15 +14,73 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
+# 20260129 이종헌 추가: mac 파일 글자 깨짐 방지
+from urllib.parse import unquote
+import unicodedata
 
+# 20260129 이종헌 추가: 코드변수로 필수 슬롯 제어
+ENABLE_OPTIONAL_DEMO_SLOTS = False  # False=필수만, True=필수+옵션
+
+_SLOTS_ALL: list["SlotDef"] | None = None  # 원본 백업
+
+
+def _refresh_slots() -> None:
+    global SLOTS, _SLOTS_ALL
+    if _SLOTS_ALL is None:
+        _SLOTS_ALL = list(SLOTS)  # 최초 1회 백업
+
+    SLOTS = list(_SLOTS_ALL) if ENABLE_OPTIONAL_DEMO_SLOTS else [s for s in _SLOTS_ALL if s.required]
+        
+        
 # -----------------------------
 # 유틸: 파일명 정규화
 # -----------------------------
 _SEP_RE = re.compile(r"[\s\-_()\[\]{}]+")
 
 
+# 20260129 이종헌 수정: ZIP 파일명 모지바케(cp437로 잘못 디코딩된 UTF-8)를 복구
+def _hangul_count(s: str) -> int:
+    return sum(1 for ch in s if "\uac00" <= ch <= "\ud7a3")
+
+
+# 20260129 이종헌 수정: zipfile에서 종종 발생하는 cp437->utf8 깨짐 복구 시도
+def _recover_zip_mojibake(s: str) -> str:
+    """
+    ZIP 내부 파일명이 cp437로 잘못 디코딩되어 'ßä...' 같은 형태로 깨진 경우,
+    bytes를 다시 cp437로 encode한 뒤 utf-8로 decode하면 복구되는 케이스가 많다.
+    """
+    if not s:
+        return s
+    try:
+        fixed = s.encode("cp437").decode("utf-8")
+        # 복구 결과가 '더 한글스러우면' 채택
+        if _hangul_count(fixed) > _hangul_count(s):
+            return fixed
+    except Exception:
+        pass
+    return s
+
+
+# 20260129 이종헌 수정: 다양한 파일명 케이스 커버
+# slots.py - import/정규식 정의 구간에 추가
+_ID_PREFIX_RE = re.compile(r"^[0-9a-f]{8,}[_\-]+", re.IGNORECASE)
+
+# 20260129 이종헌 수정: mac파일명 깨짐 방지
 def _norm(s: str) -> str:
     s = (s or "").strip()
+    # presigned url 등 query 제거 (storage_uri가 들어오는 케이스 대응)
+    s = s.split("?", 1)[0]
+    # 경로가 들어오면 basename만 사용
+    s = s.rsplit("/", 1)[-1]
+    # URL 인코딩된 파일명 복원 (%EA%.. -> 한글)
+    s = unquote(s)
+    # ZIP 모지바케 복구
+    s = _recover_zip_mojibake(s)
+    # macOS 한글(NFD) → NFC 정규화 (키워드 매칭 안정화)
+    s = unicodedata.normalize("NFC", s)
+    # file_id prefix 제거(있으면)
+    s = _ID_PREFIX_RE.sub("", s)
+
     s = _SEP_RE.sub(" ", s)
     return s.lower()
 
@@ -70,14 +126,15 @@ K_INV = ("목록", "리스트", "inventory", "재고", "보관", "storage", "sto
 K_DISPOSAL = ("폐기", "처리", "반출", "위탁", "disposal", "waste", "manifest", "올바로", "인계서", "인수인계", "처리확인", "consignment")
 
 K_ETHICS = ("윤리", "행동강령", "윤리강령", "code of conduct", "conduct", "ethic", "ethics")
-K_LOG = ("배포", "수신", "확인율", "로그", "distribution", "receipt", "ack", "read")
+K_LOG = ("배포", "수신", "확인율", "로그", "distribution", "receipt", "ack", "read", "배포로그")
 K_PLEDGE = ("서약서", "확인서", "pledge", "acknowledgement", "acknowledgment")
-K_POSTER = ("포스터", "poster", "캠페인", "campaign", "홍보")
+K_POSTER = ("포스터", "poster", "캠페인", "campaign", "홍보", "사진", "image", "이미지")
 
 
 # -----------------------------
 # 슬롯 정의
 # -----------------------------
+# 20260129 이종헌 수정: 목데이터 수정으로 인한 필수 슬롯 변경
 SLOTS: list[SlotDef] = [
     # Energy
     SlotDef(
@@ -110,10 +167,10 @@ SLOTS: list[SlotDef] = [
     ),
     SlotDef(
         name="esg.energy.water.usage",
-        required=False,
+        required=True,
         must_any_1=K_WATER,
         must_any_2=K_USAGE,
-        boost=("m3", "㎥", "water usage"),
+        boost=("m3", "㎥", "water usage", "수도사용량"),
     ),
     SlotDef(
         name="esg.energy.water.bill",
@@ -124,30 +181,29 @@ SLOTS: list[SlotDef] = [
     ),
     SlotDef(
         name="esg.energy.ghg.evidence",
-        required=False,
+        required=False, 
         must_any_1=("ghg", "온실가스", "탄소", "co2", "scope"),
         must_any_2=K_GHG,
         boost=("emission factor", "배출계수", "scope1", "scope2"),
     ),
-
     # Hazmat
     SlotDef(
         name="esg.hazmat.msds",
         required=True,
         must_any_1=K_MSDS,
-        must_any_2=K_HAZ,  # NOTE: 이제 "필수 게이트"가 아니라 점수 그룹
+        must_any_2=K_HAZ,
         boost=("msds", "sds", "material safety"),
     ),
     SlotDef(
         name="esg.hazmat.inventory",
-        required=False,
+        required=True, 
         must_any_1=K_HAZ,
         must_any_2=K_INV,
-        boost=("inventory", "재고", "보관", "storage"),
+        boost=("inventory", "재고", "보관", "storage", "유해물질목록"),
     ),
     SlotDef(
         name="esg.hazmat.disposal.list",
-        required=False,
+        required=False, 
         must_any_1=K_DISPOSAL,
         must_any_2=("목록", "list", "manifest", "대장"),
         boost=("manifest", "올바로", "인계서"),
@@ -170,33 +226,35 @@ SLOTS: list[SlotDef] = [
     ),
     SlotDef(
         name="esg.ethics.distribution.log",
-        required=False,
+        required=True,
         must_any_1=K_ETHICS,
         must_any_2=K_LOG,
-        boost=("확인율", "distribution", "log", "receipt"),
+        boost=("확인율", "distribution", "log", "receipt", "배포로그", "배포", "로그"),
     ),
     SlotDef(
         name="esg.ethics.pledge",
-        required=False,
+        required=True,  
         must_any_1=K_ETHICS,
         must_any_2=K_PLEDGE,
-        boost=("서약서", "pledge", "확인서"),
+        boost=("서약서", "pledge", "확인서", "acknowledgement", "acknowledgment"),
     ),
     SlotDef(
         name="esg.ethics.poster.image",
-        required=False,
+        required=True,
         must_any_1=K_POSTER,
         must_any_2=K_ETHICS,
-        boost=("poster", "포스터", "캠페인"),
+        boost=("poster", "포스터", "캠페인", "사진", "image", "이미지"),
     ),
 ]
 
 
 def get_required_slot_names() -> list[str]:
+    _refresh_slots()
     return [s.name for s in SLOTS if s.required]
 
 
 def get_all_slot_names() -> list[str]:
+    _refresh_slots()
     return [s.name for s in SLOTS]
 
 
@@ -208,14 +266,9 @@ _PAIR_BONUS = 3
 
 
 def match_filename_to_slot(filename: str) -> tuple[str, float] | None:
+    _refresh_slots()
     """
     파일명만 보고 슬롯 추정(점수 기반, Soft Gate).
-
-    20260129 이종헌 수정:
-    - 기존: must_any_1 + must_any_2 를 "둘 다 만족"해야만 후보
-    - 변경: 둘 중 하나라도 있으면 후보로 올리고,
-            둘 다 있으면 점수(=confidence)를 크게 올려 1등으로 뽑히게 한다.
-    - 단, 최소 점수(_MIN_SCORE) 미만이면 None 반환(아무거나 매칭 방지)
     """
     f = _norm(filename)
     if not f:
@@ -229,14 +282,11 @@ def match_filename_to_slot(filename: str) -> tuple[str, float] | None:
         has2 = _has_any(f, s.must_any_2)
         has_regex = bool(s.regex and s.regex.search(f))
 
-        # 20260129 이종헌 수정: 하드 AND 제거: 둘 다 없어도 되는 게 아니라,
-        #           "아무 신호도 없으면" 후보 제외 (랜덤 매칭 방지)
         if not (has1 or has2 or has_regex):
             continue
 
         score = 0
 
-        # 20260129 이종헌 수정: 그룹별로 점수 부여 (하나만 있어도 점수는 생김)
         if has1:
             score += 2
             score += _count_any(f, s.must_any_1)
@@ -245,30 +295,26 @@ def match_filename_to_slot(filename: str) -> tuple[str, float] | None:
             score += 2
             score += _count_any(f, s.must_any_2)
 
-        # 20260129 이종헌 수정: 둘 다 맞으면 추가 보너스 → 정확한 파일명이면 확실히 1등
         if has1 and has2:
             score += _PAIR_BONUS
 
-        # boost는 그대로 가산
         score += _count_any(f, s.boost)
 
-        # regex 보강
         if has_regex:
             score += 2
+
+        if s.name == "esg.ethics.code":
+            if _has_any(f, K_LOG) or _has_any(f, K_PLEDGE) or _has_any(f, K_POSTER):
+                score -= 4  # log/pledge/poster 신호가 있으면 code 감점
 
         if score > best_score:
             best_score = score
             best_slot = s.name
+            
 
-    # 20260129 이종헌 수정: 최소 점수 미달이면 매칭 안 함(과매칭 방지)
     if not best_slot or best_score < _MIN_SCORE:
         return None
 
-    # 20260129 이종헌 수정: 점수 구간 재조정(Soft Gate 점수 체계에 맞춤)
-    # 대략:
-    # - 4~6: 약한 매칭(단어 1~2개만 맞은 수준)
-    # - 7~10: 보통(도메인/목적 둘 중 하나 확실 + boost 일부)
-    # - 11+: 강함(도메인+목적 모두 + boost 다수)
     if best_score <= 6:
         conf = 0.78
     elif best_score <= 10:
