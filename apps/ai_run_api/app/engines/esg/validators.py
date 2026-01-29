@@ -8,10 +8,24 @@ ESG validators
 """
 
 from __future__ import annotations
-
 from typing import Any
-
 import pandas as pd
+
+# 20260130 이종헌 추가: df.columns 중 aliases에 해당하는 첫 컬럼명을 반환(대소문자/공백 무시).
+def _pick_col(df: pd.DataFrame, aliases: tuple[str, ...]) -> str | None:
+    if df.empty:
+        return None
+    norm = {str(c).strip().lower(): c for c in df.columns}
+    for a in aliases:
+        key = str(a).strip().lower()
+        if key in norm:
+            return norm[key]
+    return None
+
+
+def _has_unit_hint(df: pd.DataFrame, hints: tuple[str, ...]) -> bool:
+    cols = [str(c).lower() for c in df.columns]
+    return any(any(h in c for h in hints) for c in cols)
 
 
 def _spike_threshold(ratio: float) -> str | None:
@@ -153,26 +167,58 @@ def validate_slot(slot_name: str, file_type: str, extracted: dict) -> list[str]:
     """submit.py에서 파일 1건 추출 끝난 직후 호출되는 함수"""
     reasons: list[str] = []
 
+    # 20260130 이종헌 수정: 전기, 가스, 수도 완화
     # ── 전기 사용량(E1/E2) ──────────────────────────────────
-    if slot_name == "esg.energy.electricity.usage_xlsx" and file_type == "xlsx":
+    if slot_name in ("esg.energy.electricity.usage_xlsx", "esg.energy.electricity.usage") and file_type == "xlsx":
         df = _esg_read_df(extracted.get("df_preview", ""))
-        reasons += _esg_validate_usage_basic(df, "Usage_kWh")
-        reasons += _esg_validate_spike_daily(df, "date", "Usage_kWh")
 
-        # 단위(컬럼) 체크: 컬럼명에 kWh 없으면 UNIT_MISSING 처리
-        if "Usage_kWh" not in df.columns:
+        time_col = _pick_col(df, ("date", "timestamp", "datetime", "ts", "일자", "날짜"))
+        val_col = _pick_col(df, ("Usage_kWh", "usage_kwh", "kwh", "KWH", "사용량", "전력사용량"))
+
+        # 20260130 이종헌 수정: 헤더가 기대와 다를 때: HEADER_MISMATCH
+        if not val_col:
+            reasons.append("HEADER_MISMATCH")
+            return list(dict.fromkeys(reasons))
+
+        # 20260130 이종헌 수정: 기본값/스파이크 검증
+        reasons += _esg_validate_usage_basic(df, val_col)
+        if time_col:
+            reasons += _esg_validate_spike_daily(df, time_col, val_col)
+
+        # 20260130 이종헌 수정: 단위 힌트(너무 빡빡하게 안함)
+        if not _has_unit_hint(df, ("kwh", "kw h", "전력", "전기")):
             reasons.append("E1_UNIT_MISSING")
 
     # ── 가스 사용량(E1/E2) ──────────────────────────────────
-    elif slot_name == "esg.energy.gas.usage_xlsx" and file_type == "xlsx":
+    elif slot_name in ("esg.energy.gas.usage_xlsx", "esg.energy.gas.usage") and file_type == "xlsx":
         df = _esg_read_df(extracted.get("df_preview", ""))
-        reasons += _esg_validate_usage_basic(df, "flow_m3")
-        reasons += _esg_validate_spike_daily(df, "timestamp", "flow_m3")
 
-    # ── 수도 사용량(옵션) ───────────────────────────────────
-    elif slot_name == "esg.energy.water.usage_xlsx" and file_type == "xlsx":
+        time_col = _pick_col(df, ("timestamp", "date", "datetime", "ts", "일자", "날짜"))
+        val_col = _pick_col(df, ("flow_m3", "Flow_m3", "usage_m3", "Usage_m3", "m3", "㎥", "사용량", "가스사용량"))
+
+        if not val_col:
+            reasons.append("HEADER_MISMATCH")
+            return list(dict.fromkeys(reasons))
+
+        reasons += _esg_validate_usage_basic(df, val_col)
+        if time_col:
+            reasons += _esg_validate_spike_daily(df, time_col, val_col)
+
+    # ── 수도 사용량 ───────────────────────────────────
+    elif slot_name in ("esg.energy.water.usage_xlsx", "esg.energy.water.usage") and file_type == "xlsx":
         df = _esg_read_df(extracted.get("df_preview", ""))
-        reasons += _esg_validate_usage_basic(df, "Usage_m3")
+
+        time_col = _pick_col(df, ("timestamp", "date", "datetime", "ts", "일자", "날짜"))
+        val_col = _pick_col(df, ("Usage_m3", "usage_m3", "m3", "㎥", "사용량", "수도사용량"))
+
+        if not val_col:
+            reasons.append("HEADER_MISMATCH")
+            return list(dict.fromkeys(reasons))
+
+        reasons += _esg_validate_usage_basic(df, val_col)
+        # 수도도 스파이크 체크 하고 싶으면 아래 2줄 유지
+        if time_col:
+            reasons += _esg_validate_spike_daily(df, time_col, val_col)
 
     # ── 윤리강령 텍스트 품질/섹션 ──────────────────────────
     elif (slot_name.startswith("esg.governance.ethics") or slot_name == "esg.ethics.code") and file_type == "pdf":

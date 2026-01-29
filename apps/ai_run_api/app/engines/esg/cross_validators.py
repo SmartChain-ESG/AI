@@ -79,6 +79,17 @@ def _pick_all(extractions_by_slot: dict[str, list[dict]], candidates: set[str]) 
 
 def _daily_peak(df: pd.DataFrame, time_col: str, value_col: str) -> float | None:
     try:
+        # 20260130 이종헌 추가: 컬럼 없으면 alias로 대체
+        if time_col not in df.columns:
+          for c in ("date", "timestamp", "datetime", "ts", "일자", "날짜"):
+            if c in df.columns:
+                time_col = c
+                break
+        if value_col not in df.columns:
+            for c in ("Usage_kWh", "usage_kwh", "kwh", "flow_m3", "usage_m3", "Usage_m3", "m3", "㎥", "사용량"):
+                if c in df.columns:
+                    value_col = c
+                    break
         ts = pd.to_datetime(df[time_col], errors="coerce")
         v = pd.to_numeric(df[value_col], errors="coerce")
         tmp = pd.DataFrame({"ts": ts, "v": v}).dropna()
@@ -96,6 +107,17 @@ def _daily_peak(df: pd.DataFrame, time_col: str, value_col: str) -> float | None
 def _monthly_sum(df: pd.DataFrame, time_col: str, value_col: str) -> dict[tuple[int, int], float]:
     out: dict[tuple[int, int], float] = {}
     try:
+        # 20260130 이종헌 추가: 컬럼 없으면 alias로 대체 
+        if time_col not in df.columns:
+          for c in ("date", "timestamp", "datetime", "ts", "일자", "날짜"):
+              if c in df.columns:
+                  time_col = c
+                  break
+        if value_col not in df.columns:
+            for c in ("Usage_kWh", "usage_kwh", "kwh", "flow_m3", "usage_m3", "Usage_m3", "m3", "㎥", "사용량"):
+                if c in df.columns:
+                    value_col = c
+                    break
         ts = pd.to_datetime(df[time_col], errors="coerce")
         v = pd.to_numeric(df[value_col], errors="coerce")
         tmp = pd.DataFrame({"ts": ts, "v": v}).dropna()
