@@ -79,6 +79,24 @@ SLOTS: list[SlotDef] = [
             re.compile(r"(?i)site.?photo|현장.?사진|현장사진"),
         ],
     ),
+
+    # 교육 출석부 (스캔 PDF) — 날짜, 교육명, 이름, 서명
+    SlotDef(
+        name="safety.education.attendance",
+        required=False,
+        patterns=[
+            re.compile(r"(?i)attend|출석부|출석명단|교육.*출석|출석.*명부"),
+        ],
+    ),
+
+    # 교육일 사진 (이미지) — 교육 현장 촬영본
+    SlotDef(
+        name="safety.education.photo",
+        required=False,
+        patterns=[
+            re.compile(r"(?i)edu.*photo|교육.*사진|교육일.*사진|교육현장"),
+        ],
+    ),
 ]
 
 

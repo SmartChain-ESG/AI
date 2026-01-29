@@ -70,6 +70,22 @@ SLOTS: list[SlotDef] = [
         patterns=[re.compile(r"(?i)((컴플라이언스|법정의무).*교육|compliance.*plan)")],
         accepted_exts=EXT_ALL,
     ),
+    # 6. 교육 출석부 (스캔 PDF)
+    SlotDef(
+        name="compliance.education.attendance",
+        display_name="교육 출석부",
+        required=False,
+        patterns=[re.compile(r"(?i)(출석부|출석명단|교육.*출석|attend)")],
+        accepted_exts=EXT_DOCS,
+    ),
+    # 7. 교육일 사진 (이미지)
+    SlotDef(
+        name="compliance.education.photo",
+        display_name="교육일 사진",
+        required=False,
+        patterns=[re.compile(r"(?i)(교육.*사진|교육일.*사진|edu.*photo|교육현장)")],
+        accepted_exts=EXT_DOCS,
+    ),
 ]
 
 

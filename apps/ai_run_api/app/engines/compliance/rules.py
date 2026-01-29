@@ -43,4 +43,9 @@ REASON_CODES: dict[str, str] = {
     "LLM_ANOMALY_DETECTED": "AI가 문서 이상 징후를 감지함",
     "LLM_MISSING_FIELDS":   "AI가 누락 항목을 감지함",
     "VIOLATION_DETECTED":   "AI가 위반 사항을 감지함",
+
+    # ── 교차 검증 (출석부 vs 교육사진) ──
+    "CROSS_HEADCOUNT_MISMATCH":       "출석부 인원수와 교육사진 인원수 불일치",
+    "CROSS_ATTENDANCE_PARSE_FAILED":  "출석부에서 인원수 추출 실패",
+    "CROSS_PHOTO_COUNT_FAILED":       "교육사진에서 인원수 감지 실패",
 }

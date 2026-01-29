@@ -116,6 +116,9 @@ async def _extract_and_analyse(
             if violations:
                 extracted.setdefault("reasons", []).append("VIOLATION_DETECTED")
                 extras["violations"] = "; ".join(str(v) for v in violations)
+            # person_count → extras
+            if vision.get("person_count") is not None:
+                extras["person_count"] = str(vision["person_count"])
             # detected_objects → extras
             objects = vision.get("detected_objects", []) or vision.get("safety_objects", [])
             if objects:
@@ -384,24 +387,24 @@ async def run_submit(req: SubmitRequest) -> SubmitResponse:
     provided = {h.slot_name for h in req.slot_hint}
     missing = [s for s in required if s not in provided]
 
-    # (4.5) 도메인별 교차 검증 (슬롯 간 비교)
-    cross_validator = _get_slot_validator(req.domain)
-    if cross_validator is not None and hasattr(cross_validator, "esg_cross_checks"):
-        try:
-            cross_results = cross_validator.esg_cross_checks(
-                dict(slot_groups), req.period_start, req.period_end,
-            )
-            for cr in cross_results:
-                slot_results.append(SlotResult(
-                    slot_name=cr["slot_name"],
-                    verdict=cr.get("verdict", "NEED_FIX"),
-                    reasons=cr.get("reasons", []),
-                    file_ids=[],
-                    file_names=[],
-                    extras=cr.get("extras", {}),
-                ))
-        except Exception:
-            pass
+    # (4.5) 도메인별 교차 검증 (슬롯 간 1:1 비교)
+    try:
+        import importlib
+        cross_mod = importlib.import_module(f"app.engines.{req.domain}.cross_validators")
+        cross_results = cross_mod.cross_validate_slot(dict(slot_groups))
+        for cr in cross_results:
+            slot_results.append(SlotResult(
+                slot_name=cr["slot_name"],
+                verdict=cr.get("verdict", "NEED_FIX"),
+                reasons=cr.get("reasons", []),
+                file_ids=[],
+                file_names=[],
+                extras=cr.get("extras", {}),
+            ))
+    except (ModuleNotFoundError, AttributeError):
+        pass
+    except Exception:
+        pass
 
     # (5) CLARIFY
     clarifications = await _generate_clarifications(slot_results)

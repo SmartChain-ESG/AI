@@ -26,6 +26,7 @@ _IMAGE_JSON_SCHEMA = (
     '"detected_objects": ["object1", ...], '
     '"violations": ["description", ...], '
     '"scene_description": "one-line description", '
+    '"person_count": <integer or null>, '
     '"anomalies": ["issue1", ...], '
     '"extras": {"key": "value", ...}}\n'
 )
@@ -112,11 +113,13 @@ IMAGE_VISION_USER: dict[str, str] = {
     "safety": (
         "Analyze this safety inspection image. "
         "Identify all dates, safety equipment/objects, any violations, "
-        "and describe the scene."
+        "and describe the scene. "
+        "If people are visible, count the total number of people (person_count)."
     ),
     "compliance": (
         "Analyze this compliance document image. "
-        "Identify dates, stamps, seals, signatures, and any irregularities."
+        "Identify dates, stamps, seals, signatures, and any irregularities. "
+        "If people are visible, count the total number of people (person_count)."
     ),
     "esg": (
         "Analyze this ESG evidence image. "
