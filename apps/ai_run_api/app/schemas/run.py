@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 Domain = Literal["safety", "compliance", "esg"]
 Verdict = Literal["PASS", "NEED_FIX", "NEED_CLARIFY"]
-RiskLevel = Literal["HIGH", "LOW"]
+RiskLevel = Literal["HIGH", "MEDIUM", "LOW"]
 SlotStatusEnum = Literal["SUBMITTED", "MISSING"]
 
 

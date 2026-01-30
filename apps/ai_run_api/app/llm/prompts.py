@@ -32,7 +32,8 @@ _IMAGE_JSON_SCHEMA = (
 )
 
 _JUDGE_JSON_SCHEMA = (
-    '{"risk_level": "HIGH" or "LOW", "verdict": "PASS" or "NEED_FIX", '
+    '{"risk_level": "HIGH" or "MEDIUM" or "LOW", '
+    '"verdict": "PASS" or "NEED_FIX" or "NEED_CLARIFY", '
     '"why": "concise explanation in Korean", '
     '"extras": {"key": "value", ...}}\n'
 )
