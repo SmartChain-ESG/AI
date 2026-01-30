@@ -19,7 +19,7 @@ router = APIRouter(prefix="/run", tags=["run"])
 @router.post("/preview", response_model=PreviewResponse)
 async def preview(req: PreviewRequest) -> PreviewResponse:
     """파일이 업로드될 때마다 슬롯 추정 + 필수 항목 현황판 반환."""
-    return run_preview(req)
+    return await run_preview(req)
 
 
 @router.post("/submit", response_model=SubmitResponse)
