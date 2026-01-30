@@ -215,13 +215,25 @@ def _validate_slot(extractions: list[dict], slot_name: str) -> SlotResult:
     # reason 중복 제거
     reasons = list(dict.fromkeys(all_reasons))
 
-    # verdict 결정
-    if "OCR_FAILED" in reasons:
+    # verdict 결정 — 기획서 §1 기준
+    # A. NEED_FIX: 파일 자체 문제 → 분석 불가, 재제출 필요
+    _NEED_FIX_REASONS = {
+        "MISSING_SLOT", "PARSE_FAILED", "HEADER_MISMATCH",
+        "EMPTY_TABLE", "OCR_FAILED",
+    }
+    # B. NEED_CLARIFY: 내용 문제 → 분석은 됐으나 이슈 발견, 소명 필요
+    _NEED_CLARIFY_REASONS = {
+        "VIOLATION_DETECTED", "LOW_EDUCATION_RATE", "SIGNATURE_MISSING",
+        "E2_SPIKE_DETECTED", "E3_BILL_MISMATCH", "LLM_ANOMALY_DETECTED",
+    }
+
+    if any(r in _NEED_FIX_REASONS for r in reasons):
+        verdict = "NEED_FIX"
+    elif any(r in _NEED_CLARIFY_REASONS for r in reasons):
         verdict = "NEED_CLARIFY"
-    elif any(r in reasons for r in ("DATE_MISMATCH", "SIGNATURE_MISSING", "HEADER_MISMATCH")):
-        verdict = "NEED_FIX"
     elif reasons:
-        verdict = "NEED_FIX"
+        # 기타 reason은 내용 문제로 간주
+        verdict = "NEED_CLARIFY"
     else:
         verdict = "PASS"
 
@@ -319,12 +331,28 @@ async def _final_aggregate(
             )
         )
 
-    # 가장 나쁜 verdict
+    # ── 기획서 §2: risk_level 집계 (업체 단위) ──
     verdicts = [sr.verdict for sr in slot_results]
-    if "NEED_FIX" in verdicts or "NEED_CLARIFY" in verdicts:
+
+    if "NEED_FIX" in verdicts:
+        # 1) 하나라도 NEED_FIX → HIGH
         overall_verdict = "NEED_FIX"
         risk_level = "HIGH"
+    elif "NEED_CLARIFY" in verdicts:
+        # 2) NEED_FIX 없고 NEED_CLARIFY 있음
+        overall_verdict = "NEED_CLARIFY"
+        # ESG 도메인만 NEED_CLARIFY → LOW (모니터링 대상)
+        clarify_domains = {
+            sr.slot_name.split(".")[0]
+            for sr in slot_results if sr.verdict == "NEED_CLARIFY"
+        }
+        if clarify_domains <= {"esg"}:
+            risk_level = "LOW"
+        else:
+            # Safety 또는 Compliance NEED_CLARIFY → MEDIUM
+            risk_level = "MEDIUM"
     else:
+        # 3) 모두 PASS → LOW
         overall_verdict = "PASS"
         risk_level = "LOW"
 
@@ -343,15 +371,27 @@ async def _final_aggregate(
         summary_lines.append(line)
     judge_input = "\n".join(summary_lines)
 
+    _RISK_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
     try:
         raw = await ask_llm(get_prompt(JUDGE_FINAL, domain), judge_input, heavy=True)
         llm_result = _safe_json(raw)
         why = llm_result.get("why", "")
-        risk_level = llm_result.get("risk_level", risk_level)
-        overall_verdict = llm_result.get("verdict", overall_verdict)
+        # LLM은 완화만 허용, 규칙보다 엄격하게 올리지 않음
+        llm_risk = llm_result.get("risk_level", risk_level)
+        if _RISK_ORDER.get(llm_risk, 0) <= _RISK_ORDER[risk_level]:
+            risk_level = llm_risk
+        llm_verdict = llm_result.get("verdict", overall_verdict)
+        _VERDICT_ORDER = {"PASS": 0, "NEED_CLARIFY": 1, "NEED_FIX": 2}
+        if _VERDICT_ORDER.get(llm_verdict, 0) <= _VERDICT_ORDER[overall_verdict]:
+            overall_verdict = llm_verdict
         extras = {k: str(v) for k, v in llm_result.get("extras", {}).items()}
     except Exception:
-        why = "필수 항목이 부족하거나 확인이 어려운 파일이 있습니다." if risk_level == "HIGH" else "모든 항목이 정상 확인되었습니다."
+        if risk_level == "HIGH":
+            why = "필수 항목이 부족하거나 확인이 어려운 파일이 있습니다."
+        elif risk_level == "MEDIUM":
+            why = "일부 항목에서 확인이 필요한 사항이 발견되었습니다."
+        else:
+            why = "모든 항목이 정상 확인되었습니다."
 
     return SubmitResponse(
         package_id=package_id,
@@ -407,10 +447,14 @@ async def run_submit(req: SubmitRequest) -> SubmitResponse:
         import importlib
         cross_mod = importlib.import_module(f"app.engines.{req.domain}.cross_validators")
         cross_results = cross_mod.cross_validate_slot(dict(slot_groups))
+        # ESG cross_validators가 FAIL/WARN을 반환할 수 있으므로 스키마 매핑
+        _CV_VERDICT_MAP = {"FAIL": "NEED_FIX", "WARN": "NEED_CLARIFY"}
         for cr in cross_results:
+            raw_v = cr.get("verdict", "NEED_FIX")
+            mapped_v = _CV_VERDICT_MAP.get(raw_v, raw_v)
             slot_results.append(SlotResult(
                 slot_name=cr["slot_name"],
-                verdict=cr.get("verdict", "NEED_FIX"),
+                verdict=mapped_v,
                 reasons=cr.get("reasons", []),
                 file_ids=[],
                 file_names=[],
