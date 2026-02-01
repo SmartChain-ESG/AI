@@ -1,6 +1,6 @@
 #AI/apps/out_risk_api/app/pipeline/detech.py
 
-# 20260131 이종헌 신규: LangGraph 기반 파이프라인(검색→RAG→분석→스코어→응답)
+# 20260131 이종헌 수정: ESG 외부 위험 감지 파이프라인(SEARCH→RAG→분석→스코어→응답)
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,7 +23,6 @@ from app.rag.chroma import esg_get_rag
 
 try:
     from langgraph.graph import StateGraph, END
-
     _LG_AVAILABLE = True
 except Exception:
     StateGraph = None
@@ -43,6 +42,7 @@ class esg_State:
     level: str
 
 
+# 역할: DocItem 리스트를 RAG용 텍스트 아이템으로 변환
 def esg_docs_to_text_items(docs: List[DocItem]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for d in docs:
@@ -64,6 +64,7 @@ def esg_docs_to_text_items(docs: List[DocItem]) -> List[Dict[str, Any]]:
     return out
 
 
+# 역할: 텍스트 1개를 Signal 1개로 변환(분류→요약→근거→점수)
 def esg_build_signal_from_text(
     req: ExternalRiskDetectRequest,
     text: str,
@@ -112,6 +113,14 @@ def esg_build_signal_from_text(
     )
 
 
+# 역할: signals를 정렬/상한 적용(운영용 가독성 + 과다 신호 방지)
+def esg_finalize_signals(signals: List[Signal], max_signals: int = 20) -> List[Signal]:
+    # 20260131 이종헌 수정: score 우선, severity 보조로 정렬 후 상한 적용
+    ordered = sorted(signals, key=lambda s: (float(s.score), int(s.severity)), reverse=True)
+    return ordered[: max(1, int(max_signals or 20))]
+
+
+# 역할: 신호 기반 권고 문장을 생성(ESG 외부 리스크 관점)
 def esg_recommendations_from_signals(signals: List[Signal]) -> List[str]:
     if not signals:
         return ["외부 위험 신호가 확인되지 않았습니다. 정기 모니터링을 유지하세요."]
@@ -119,6 +128,8 @@ def esg_recommendations_from_signals(signals: List[Signal]) -> List[str]:
     rec: List[str] = []
     if any(s.category == "SAFETY_ACCIDENT" and s.severity >= 3 for s in signals):
         rec.append("안전사고/산재 신호가 있어 안전보건 점검 및 교육 이력 확인을 권고합니다.")
+    if any(s.category == "ENV_COMPLAINT" and s.severity >= 3 for s in signals):
+        rec.append("환경오염/민원 신호가 있어 배출·민원 대응 체계 및 개선조치 증빙 확인을 권고합니다.")
     if any(s.category == "LEGAL_SANCTION" and s.severity >= 3 for s in signals):
         rec.append("법규 위반/행정처분 가능성이 있어 관련 처분 여부 및 개선조치 증빙 확인을 권고합니다.")
     if any(s.category == "FINANCE_LITIGATION" and s.severity >= 3 for s in signals):
@@ -128,6 +139,7 @@ def esg_recommendations_from_signals(signals: List[Signal]) -> List[str]:
     return rec or ["외부 이슈 가능성이 있어 원문 확인 및 내부 리스크 점검을 권고합니다."]
 
 
+# 역할: 입력 문서가 없고 search가 켜져 있으면 검색해서 docs를 채움
 def esg_node_load_docs(state: esg_State) -> esg_State:
     docs = list(state.req.documents)
     search_used = False
@@ -141,6 +153,7 @@ def esg_node_load_docs(state: esg_State) -> esg_State:
     return state
 
 
+# 역할: docs를 Chroma에 넣고 top_k를 가져옴(불가하면 fallback)
 def esg_node_rag(state: esg_State) -> esg_State:
     state.rag_used = False
     state.rag_hits = []
@@ -155,7 +168,7 @@ def esg_node_rag(state: esg_State) -> esg_State:
 
     rag = esg_get_rag()
     if not rag.esg_ready():
-        # Chroma/LC 미설치 혹은 키 없음이면 fallback(문서 텍스트 상위 일부만 사용)
+        # 20260131 이종헌 수정: RAG 준비 안되면 문서 텍스트 일부를 RAG 히트처럼 사용(2일 MVP)
         state.rag_used = True
         state.rag_hits = text_items[: max(1, int(state.req.rag.top_k or 6))]
         return state
@@ -169,6 +182,7 @@ def esg_node_rag(state: esg_State) -> esg_State:
     return state
 
 
+# 역할: RAG 히트(우선) 또는 docs 기반으로 signals를 생성
 def esg_node_analyze(state: esg_State) -> esg_State:
     signals: List[Signal] = []
 
@@ -180,7 +194,6 @@ def esg_node_analyze(state: esg_State) -> esg_State:
                 continue
             signals.append(esg_build_signal_from_text(state.req, text=text, meta=meta))
     else:
-        # RAG 결과 없으면 docs 기반 분석
         for d in state.docs:
             text = (d.text or "").strip() or (d.snippet or "").strip()
             if not text:
@@ -194,20 +207,23 @@ def esg_node_analyze(state: esg_State) -> esg_State:
             }
             signals.append(esg_build_signal_from_text(state.req, text=text, meta=meta))
 
-    state.signals = signals
+    # 20260131 이종헌 수정: 정렬/상한 적용
+    state.signals = esg_finalize_signals(signals, max_signals=20)
     return state
 
 
+# 역할: signals 점수를 합산하고 LOW/MED/HIGH 등급을 산출
 def esg_node_score(state: esg_State) -> esg_State:
-    total = float(sum(s.score for s in state.signals))
+    total = float(sum(s.score for s in state.signals))  # 20260131 이종헌 수정: 화면에 보여주는 signals 기준으로 합산
     state.total_score = total
     state.level = esg_level_from_total(total)
     return state
 
 
+# 역할: 최종 응답(ExternalRiskDetectResponse) 생성
 def esg_build_response(state: esg_State) -> ExternalRiskDetectResponse:
     top_sources = sorted(list({d.source for d in state.docs if d.source}))[:10]
-    disclaimer = "본 결과는 외부 문서 기반의 보조 신호이며, 메인 판정을 변경하지 않습니다."
+    disclaimer = "본 결과는 ESG 관점의 외부 문서 기반 보조 신호이며, 메인 판정을 변경하지 않습니다."  # 20260131 이종헌 수정: ESG 전용 문구
     if not state.docs:
         disclaimer += " (분석할 외부 문서가 없어 신호가 제한될 수 있습니다.)"
 
@@ -226,6 +242,7 @@ def esg_build_response(state: esg_State) -> ExternalRiskDetectResponse:
     )
 
 
+# 역할: LangGraph 그래프를 구성(순서 고정)
 def esg_build_graph() -> Optional[Any]:
     if not _LG_AVAILABLE or StateGraph is None:
         return None
@@ -247,6 +264,7 @@ def esg_build_graph() -> Optional[Any]:
 _GRAPH = esg_build_graph()
 
 
+# 역할: 외부 위험 감지를 실행하고 최종 응답을 반환(API/Streamlit에서 공용 호출)
 def esg_detect_external_risk(req: ExternalRiskDetectRequest) -> ExternalRiskDetectResponse:
     state = esg_State(
         req=req,

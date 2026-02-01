@@ -29,7 +29,7 @@ def esg_chunk_documents(text_items: List[Dict[str, Any]], chunk_size: int) -> Li
     if _LC_AVAILABLE and RecursiveCharacterTextSplitter is not None and Document is not None:
         splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=80)
 
-        docs: List[Document] = []
+        docs: List[Any] = []
         for item in text_items:
             docs.append(Document(page_content=item.get("text", "") or "", metadata=item.get("metadata", {}) or {}))
 
