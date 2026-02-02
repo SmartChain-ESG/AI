@@ -18,6 +18,9 @@ PyMuPDF>=1.24.0
 # --- LLM (OpenAI) ---
 openai>=1.30.0
 
+# --- Vision (YOLO person detection) ---
+ultralytics>=8.0.0
+
 # --- Test ---
 pytest>=7.4.0
 pytest-asyncio>=0.23.0
