@@ -69,3 +69,18 @@ tmp/
 # Jupyter
 # =========================
 .ipynb_checkpoints/
+
+# =========================
+# [Project Specific] RAG & ChromaDB
+# =========================
+# 벡터 데이터베이스 (자동 생성되는 파일이므로 업로드 금지)
+vector_db/
+vectordb/
+chroma_db/
+*.sqlite3
+chroma.sqlite3
+
+# PDF 매뉴얼 및 데이터 (보안/저작권 및 용량 문제로 제외 추천)
+manuals/
+**/manuals/
+*.pdf
