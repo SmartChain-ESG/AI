@@ -26,13 +26,15 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
-![OpenAI](https://img.shields.io/badge/OpenAI_GPT--4o-412991?style=for-the-badge&logo=openai&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI_GPT--5.1-412991?style=for-the-badge&logo=openai&logoColor=white)
+![YOLOv8](https://img.shields.io/badge/YOLOv8-00FFFF?style=for-the-badge&logo=yolo&logoColor=black)
 ![Git](https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white)
 
 | 구분 | 기술 |
 |------|------|
 | Framework | FastAPI + Uvicorn |
-| LLM | OpenAI GPT-4o-mini (텍스트/데이터), GPT-4o (Vision/최종판정) |
+| LLM | OpenAI GPT-4o-mini (텍스트/데이터), GPT-5.1 (Vision/최종판정) |
+| Object Detection | YOLOv8n (CrowdHuman fine-tuned, 인원수 감지) |
 | OCR | Naver Clova OCR |
 | 파싱 | PyMuPDF (PDF), pandas + openpyxl (XLSX/CSV) |
 | HTTP | httpx (비동기 다운로드/OCR 호출) |
@@ -96,9 +98,12 @@ app/
 ├── extractors/
 │   ├── pdf_text.py                # PDF 텍스트 추출 + 조건부 OCR 폴백
 │   ├── xlsx.py                    # XLSX/CSV 파싱 (헤더 검증 포함)
-│   └── ocr/
-│       ├── clova_client.py        # Naver Clova OCR 클라이언트
-│       └── ocr_router.py          # 이미지 OCR 라우터
+│   ├── ocr/
+│   │   ├── clova_client.py        # Naver Clova OCR 클라이언트
+│   │   └── ocr_router.py          # 이미지 OCR 라우터
+│   └── yolo/
+│       ├── person_counter.py      # YOLOv8 인원수 감지 래퍼
+│       └── yolo26n_crowdhuman_fewshot.pt  # CrowdHuman fine-tuned 모델 가중치
 ├── llm/
 │   ├── client.py                  # ask_llm() / ask_llm_vision() (Light/Heavy 분기)
 │   └── prompts.py                 # 도메인별 프롬프트 (PDF/Image/Data/Judge/Clarify)
@@ -120,7 +125,7 @@ app/
         ↓
 (2) SLOT APPLY    slot_hint 적용 — 파일을 도메인 슬롯에 매핑
         ↓
-(3) EXTRACT       파싱/OCR — PDF→텍스트, XLSX→DataFrame, 이미지→OCR+Vision
+(3) EXTRACT       파싱/OCR — PDF→텍스트, XLSX→DataFrame, 이미지→OCR+Vision+YOLO
         ↓
 (4) VALIDATE      룰 검증 — validators.py 규칙 + LLM 이상탐지 → reasons 도출
         ↓
@@ -155,12 +160,13 @@ app/
 
 ---
 
-## 🤖 Dual LLM 전략
+## 🤖 AI 모델 전략
 
 | 모델 | 환경변수 | 용도 |
 |------|----------|------|
 | GPT-4o-mini (Light) | `OPENAI_MODEL_LIGHT` | PDF 분석, 데이터 분석, 보완요청 생성 |
-| GPT-4o (Heavy) | `OPENAI_MODEL_HEAVY` | Vision 이미지 분석, 최종 판정 (JUDGE_FINAL) |
+| GPT-5.1 (Heavy) | `OPENAI_MODEL_HEAVY` | Vision 이미지 분석 (위반사항/장면 설명), 최종 판정 (JUDGE_FINAL) |
+| YOLOv8n (CrowdHuman) | — | 이미지 인원수 감지 (교차검증용, YOLO 우선 → LLM 폴백) |
 
 ---
 
@@ -206,6 +212,6 @@ streamlit run apps/ai_run_api/ui/streamlit_app.py
 |--------|------|
 | `OPENAI_API_KEY` | OpenAI API 키 |
 | `OPENAI_MODEL_LIGHT` | 텍스트/데이터 분석 모델 (기본: gpt-4o-mini) |
-| `OPENAI_MODEL_HEAVY` | Vision/최종판정 모델 (기본: gpt-4o) |
+| `OPENAI_MODEL_HEAVY` | Vision/최종판정 모델 (기본: gpt-5.1) |
 | `CLOVA_OCR_API_URL` | Naver Clova OCR API URL |
 | `CLOVA_OCR_SECRET` | Clova OCR Secret Key |
