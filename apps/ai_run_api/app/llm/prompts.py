@@ -59,6 +59,7 @@ PDF_ANALYSIS: dict[str, str] = {
         "IMPORTANT: Only report anomalies for genuine violations — missing clauses "
         "or data inconsistencies. "
         "Do NOT flag signature presence/absence on employment contracts (근로계약서). "
+        "Do NOT judge or flag whether training courses are mandatory or optional. "
         "Do NOT flag items that meet all required criteria.\n"
         f"Given PDF text, return JSON only:\n{_PDF_JSON_SCHEMA}{_JSON_TAIL}"
     ),
