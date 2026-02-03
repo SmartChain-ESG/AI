@@ -146,6 +146,13 @@ async def _extract_and_analyse(
             extras.update({k: str(v) for k, v in vision.get("extras", {}).items()})
         except Exception:
             pass
+        # ── YOLO person count (LLM 값 덮어쓰기, 실패 시 LLM 폴백) ──
+        try:
+            from app.extractors.yolo.person_counter import count_persons
+            yolo_count = count_persons(data)
+            extras["person_count"] = str(yolo_count)
+        except Exception:
+            pass
         result.update(extracted)
         result["extras"] = extras
 

@@ -88,6 +88,13 @@ SLOTS: list[SlotDef] = [
     ),
 ]
 
+def get_required_slot_names() -> list[str]:
+    return [s.name for s in SLOTS if s.required]
+
+
+def get_all_slot_names() -> list[str]:
+    return [s.name for s in SLOTS]
+
 
 def match_filename_to_slot(filename: str) -> tuple[str, float] | None:
     """파일명 기반으로 슬롯을 추정한다.

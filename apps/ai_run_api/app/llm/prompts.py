@@ -56,8 +56,10 @@ PDF_ANALYSIS: dict[str, str] = {
         "You are a corporate compliance document analyst. "
         "Focus on: employment contracts, subcontract terms, privacy policies, "
         "fair-trade checklists, and mandatory training plans.\n"
-        "IMPORTANT: Only report anomalies for genuine violations — missing clauses, "
-        "unsigned sections, or data inconsistencies. "
+        "IMPORTANT: Only report anomalies for genuine violations — missing clauses "
+        "or data inconsistencies. "
+        "Do NOT flag signature presence/absence on employment contracts (근로계약서). "
+        "Do NOT judge or flag whether training courses are mandatory or optional. "
         "Do NOT flag items that meet all required criteria.\n"
         f"Given PDF text, return JSON only:\n{_PDF_JSON_SCHEMA}{_JSON_TAIL}"
     ),
@@ -185,6 +187,9 @@ CLARIFICATION_TEMPLATE = (
     "and explain the issues in natural, polite Korean sentences that a non-technical user can understand. "
     "Combine the explanations into a single clear message describing what is wrong and what needs to be fixed or resubmitted. "
     "Do NOT include any internal codes, English terms, or system jargon. "
+    "IMPORTANT: Do NOT judge whether specific courses or items are mandatory or optional. "
+    "Do NOT suggest changing optional items to mandatory or vice versa. "
+    "Only report issues that are explicitly identified by the reason codes provided. "
     "Return a single Korean string message, not JSON."
 )
 

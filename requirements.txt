@@ -20,6 +20,9 @@ PyMuPDF>=1.24.0
 # --- LLM (OpenAI) ---
 openai>=1.30.0
 
+# --- Vision (YOLO person detection) ---
+ultralytics>=8.0.0
+
 # --- Test ---
 pytest>=7.4.0
 pytest-asyncio>=0.23.0
@@ -40,4 +43,16 @@ numpy==1.26.4
 
 # --- ChatBot Service ---
 pydantic-settings>=2.0.0
+# --- [NEW] RAG & Hybrid Search (추가된 항목) ---
+# 환경 변수 관리 (Pydantic v2 호환용)
+pydantic-settings>=2.0.0
+
+# 벡터 데이터베이스
+chromadb>=0.4.0
+
+# 텍스트 청킹 (Chunking) 도구
+langchain>=0.1.0
+langchain-text-splitters>=0.0.1
+
+# 키워드 검색 (BM25) 알고리즘
 rank-bm25>=0.2.0
