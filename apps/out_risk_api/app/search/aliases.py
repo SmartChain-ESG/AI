@@ -12,15 +12,15 @@ esg_COMPANY_ALIASES = {
 def esg_expand_company_terms(company_name: str) -> list[str]:
     base = (company_name or "").strip()
     if not base:
-        return [] 
+        return []
 
     # 신규: alias 가져오기
-    aliases = esg_COMPANY_ALIASES.get(base, [])  
+    aliases = esg_COMPANY_ALIASES.get(base, [])
 
     # 신규: 중복 제거
-    terms = [base] + [a.strip() for a in aliases if a and a.strip()] 
-    uniq: list[str] = []  
-    seen: set[str] = set()  
+    terms = [base] + [a.strip() for a in aliases if a and a.strip()]
+    uniq: list[str] = []
+    seen: set[str] = set()
     for t in terms:
         if t in seen:
             continue

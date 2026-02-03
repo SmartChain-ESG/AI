@@ -1,317 +1,115 @@
 # AI/apps/out_risk_api/app/pipeline/detect.py
 
-from app.schemas.risk import ExternalRiskDetectBatchRequest, ExternalRiskDetectBatchResponse, BatchItem
+from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+import asyncio
+from typing import List
 
-from app.analyze.classifier import esg_guess_category, esg_pick_quote_and_offset
-from app.analyze.summarizer import esg_summarize_and_why
 from app.schemas.risk import (
+    ExternalRiskDetectBatchRequest,
+    ExternalRiskDetectBatchResponse,
+    ExternalRiskDetectVendorResult,
+    SearchPreviewRequest,
+    SearchPreviewResponse,
     DocItem,
-    EvidenceItem,
-    ExternalRiskDetectRequest,
-    ExternalRiskDetectResponse,
-    Offset,
-    RetrievalMeta,
-    Signal,
+    RiskLevel,
 )
-from app.scoring.rules import esg_level_from_total, esg_recency_weight
 from app.search.provider import esg_search_documents
-from app.rag.chroma import esg_get_rag
-
-try:
-    from langgraph.graph import StateGraph, END
-    _LG_AVAILABLE = True
-except Exception:
-    StateGraph = None
-    END = None
-    _LG_AVAILABLE = False
 
 
-@dataclass
-class esg_State:
-    req: ExternalRiskDetectRequest
-    docs: List[DocItem]
-    search_used: bool
-    rag_used: bool
-    rag_hits: List[Dict[str, Any]]
-    signals: List[Signal]
-    total_score: float
-    level: str
-
-
-# 역할: DocItem 리스트를 RAG용 텍스트 아이템으로 변환
-def esg_docs_to_text_items(docs: List[DocItem]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    for d in docs:
-        text = (d.text or "").strip() or (d.snippet or "").strip()
-        if not text:
-            continue
-        out.append(
-            {
-                "text": text,
-                "metadata": {
-                    "doc_id": d.doc_id,
-                    "title": d.title,
-                    "source": d.source,
-                    "url": d.url,
-                    "published_at": d.published_at,
-                },
-            }
-        )
-    return out
-
-
-# 역할: 텍스트 1개를 Signal 1개로 변환(분류→요약→근거→점수)
-def esg_build_signal_from_text(
-    req: ExternalRiskDetectRequest,
-    text: str,
-    meta: Dict[str, Any],
-) -> Signal:
-    allowed = req.categories
-    cls = esg_guess_category(text, allowed)
-
-    summary_res = esg_summarize_and_why(
-        text=text,
-        category=cls.category,
-        severity=cls.severity,
-        strict_grounding=req.options.strict_grounding,
-        model=None,
+async def esg_search_preview(req: SearchPreviewRequest) -> SearchPreviewResponse:
+    docs: List[DocItem] = await esg_search_documents(req)
+    return SearchPreviewResponse(
+        vendor=req.vendor,
+        used=True,
+        docs_count=len(docs),
+        documents=docs,
     )
 
-    published_at = str(meta.get("published_at", "")) or ""
-    weight = esg_recency_weight(published_at)
-    score = float(cls.severity) * float(weight)
 
-    evidence: List[EvidenceItem] = []
-    if req.options.return_evidence_text:
-        quote, s, e = esg_pick_quote_and_offset(text, cls.tags, max_len=200)
-        if quote:
-            evidence.append(
-                EvidenceItem(
-                    doc_id=str(meta.get("doc_id", "")),
-                    source=str(meta.get("source", "")),
-                    url=str(meta.get("url", "")),
-                    quote=quote,
-                    offset=Offset(start=s, end=e),
+async def esg_detect_external_risk_batch(req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectBatchResponse:
+    # 신규: Streamlit 타임아웃을 막기 위해 "협력사 1개당 최대 처리시간"을 강제
+    esg_per_vendor_timeout_sec = 12.0
+
+    # 수정: 동시성은 너무 키우지 말고(외부검색 병목), 기본 2~3으로 안전하게
+    sem = asyncio.Semaphore(2)
+
+    async def _run_one(vendor: str) -> ExternalRiskDetectVendorResult:
+        async with sem:
+            try:
+                # 신규: 협력사 단건이 오래 걸리면 강제로 끊고 결과는 "timeout"으로 반환
+                return await asyncio.wait_for(
+                    esg_detect_external_risk_one(vendor, req),
+                    timeout=esg_per_vendor_timeout_sec,
                 )
-            )
+            except asyncio.TimeoutError:
+                return ExternalRiskDetectVendorResult(
+                    vendor=vendor,
+                    external_risk_level=RiskLevel.LOW,
+                    total_score=0.0,
+                    docs_count=0,
+                    reason_3lines=[
+                        "외부 이슈 감지가 시간 제한으로 중단되었습니다.",
+                        f"단건 처리 제한: {esg_per_vendor_timeout_sec:.0f}s",
+                        "search.max_results / time_window_days를 줄여 재시도하세요.",
+                    ],
+                    evidence=[],
+                )
 
-    return Signal(
-        category=cls.category,
-        severity=int(cls.severity),
-        score=float(score),
-        title=str(meta.get("title", "")),
-        summary_ko=summary_res.summary_ko,
-        why=summary_res.why,
-        published_at=published_at,
-        evidence=evidence,
-        tags=list(cls.tags),
-        is_estimated=bool(summary_res.is_estimated),
+    results = await asyncio.gather(*[_run_one(v) for v in req.vendors])
+    return ExternalRiskDetectBatchResponse(results=results)
+
+
+async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectVendorResult:
+    docs: List[DocItem] = await esg_search_documents(_esg_build_search_req(vendor, req))
+
+    reason_3lines = _esg_make_reason_3lines(vendor, docs)
+    total_score = _esg_calc_total_score(docs)
+    level = _esg_level_from_score(total_score)
+
+    return ExternalRiskDetectVendorResult(
+        vendor=vendor,
+        external_risk_level=level,
+        total_score=float(total_score),
+        docs_count=len(docs),
+        reason_3lines=reason_3lines,
+        evidence=docs[:10],
     )
 
 
-# 역할: signals를 정렬/상한 적용(운영용 가독성 + 과다 신호 방지)
-def esg_finalize_signals(signals: List[Signal], max_signals: int = 20) -> List[Signal]:
-    # 20260131 이종헌 수정: score 우선, severity 보조로 정렬 후 상한 적용
-    ordered = sorted(signals, key=lambda s: (float(s.score), int(s.severity)), reverse=True)
-    return ordered[: max(1, int(max_signals or 20))]
+def _esg_build_search_req(vendor: str, req: ExternalRiskDetectBatchRequest):
+    return SearchPreviewRequest(vendor=vendor, rag=req.rag)
 
 
-# 역할: 신호 기반 권고 문장을 생성(ESG 외부 리스크 관점)
-def esg_recommendations_from_signals(signals: List[Signal]) -> List[str]:
-    if not signals:
-        return ["외부 위험 신호가 확인되지 않았습니다. 정기 모니터링을 유지하세요."]
-
-    rec: List[str] = []
-    if any(s.category == "SAFETY_ACCIDENT" and s.severity >= 3 for s in signals):
-        rec.append("안전사고/산재 신호가 있어 안전보건 점검 및 교육 이력 확인을 권고합니다.")
-    if any(s.category == "ENV_COMPLAINT" and s.severity >= 3 for s in signals):
-        rec.append("환경오염/민원 신호가 있어 배출·민원 대응 체계 및 개선조치 증빙 확인을 권고합니다.")
-    if any(s.category == "LEGAL_SANCTION" and s.severity >= 3 for s in signals):
-        rec.append("법규 위반/행정처분 가능성이 있어 관련 처분 여부 및 개선조치 증빙 확인을 권고합니다.")
-    if any(s.category == "FINANCE_LITIGATION" and s.severity >= 3 for s in signals):
-        rec.append("재무불안/소송 가능성이 있어 거래 리스크(채무/소송/회생) 점검을 권고합니다.")
-    if any(s.is_estimated for s in signals):
-        rec.append("일부 신호는 근거가 부족한 '추정'입니다. 원문 확인 후 사실관계 검증을 권고합니다.")
-    return rec or ["외부 이슈 가능성이 있어 원문 확인 및 내부 리스크 점검을 권고합니다."]
+def _esg_make_reason_3lines(vendor: str, docs: List[DocItem]) -> List[str]:
+    if not docs:
+        return [
+            f"{vendor} 관련 외부 문서가 수집되지 않았습니다.",
+            "검색 공급자(GDELT/RSS) 응답 실패 또는 관련성 필터 과도 가능성이 있습니다.",
+            "preview로 수집 결과를 먼저 확인하세요.",
+        ]
+    sources = sorted({d.source for d in docs if d.source})[:3]
+    return [
+        f"{vendor} 관련 외부 문서 {len(docs)}건을 수집했습니다.",
+        f"주요 출처: {', '.join(sources) if sources else 'N/A'}",
+        "문서 상위 10건을 evidence로 제공했습니다.",
+    ]
 
 
-# 역할: 입력 문서가 없고 search가 켜져 있으면 검색해서 docs를 채움
-def esg_node_load_docs(state: esg_State) -> esg_State:
-    docs = list(state.req.documents)
-    search_used = False
-
-    if state.req.search.enabled and not docs:
-        docs = esg_search_documents(state.req)
-        search_used = True
-
-    state.docs = docs
-    state.search_used = search_used
-    return state
+def _esg_calc_total_score(docs: List[DocItem]) -> float:
+    n = len(docs)
+    if n <= 0:
+        return 0.0
+    if n <= 3:
+        return 30.0
+    if n <= 7:
+        return 60.0
+    return 90.0
 
 
-# 역할: docs를 Chroma에 넣고 top_k를 가져옴(불가하면 fallback)
-def esg_node_rag(state: esg_State) -> esg_State:
-    state.rag_used = False
-    state.rag_hits = []
-
-    if not state.req.rag.enabled:
-        return state
-
-    text_items = esg_docs_to_text_items(state.docs)
-    if not text_items:
-        state.rag_used = True
-        return state
-
-    rag = esg_get_rag()
-    if not rag.esg_ready():
-        # 20260131 이종헌 수정: RAG 준비 안되면 문서 텍스트 일부를 RAG 히트처럼 사용(2일 MVP)
-        state.rag_used = True
-        state.rag_hits = text_items[: max(1, int(state.req.rag.top_k or 6))]
-        return state
-
-    rag.esg_upsert(text_items, chunk_size=int(state.req.rag.chunk_size or 800))
-    query = (state.req.search.query or "").strip() or state.req.company.name
-    hits = rag.esg_retrieve(query=query, top_k=int(state.req.rag.top_k or 6))
-
-    state.rag_used = True
-    state.rag_hits = hits
-    return state
-
-
-# 역할: RAG 히트(우선) 또는 docs 기반으로 signals를 생성
-def esg_node_analyze(state: esg_State) -> esg_State:
-    signals: List[Signal] = []
-
-    if state.rag_hits:
-        for h in state.rag_hits:
-            text = (h.get("text", "") or "").strip()
-            meta = h.get("metadata", {}) or {}
-            if not text:
-                continue
-            sig = esg_build_signal_from_text(state.req, text=text, meta=meta)  # 20260202 이종헌 신규: 신호를 임시로 받음
-            if int(sig.severity) <= 0:  # 20260202 이종헌 신규: 키워드 히트 0(무의미) 신호는 제거
-                continue  # 20260202 이종헌 신규: score=0 쓰레기 신호 방지
-            signals.append(sig)  # 20260202 이종헌 수정: 통과한 신호만 추가
-    else:
-        for d in state.docs:
-            text = (d.text or "").strip() or (d.snippet or "").strip()
-            if not text:
-                continue
-            meta = {
-                "doc_id": d.doc_id,
-                "title": d.title,
-                "source": d.source,
-                "url": d.url,
-                "published_at": d.published_at,
-            }
-            signals.append(esg_build_signal_from_text(state.req, text=text, meta=meta))
-
-    # 20260131 이종헌 수정: 정렬/상한 적용
-    state.signals = esg_finalize_signals(signals, max_signals=20)
-    return state
-
-
-# 역할: signals 점수를 합산하고 LOW/MED/HIGH 등급을 산출
-def esg_node_score(state: esg_State) -> esg_State:
-    total = float(sum(s.score for s in state.signals))  # 20260131 이종헌 수정: 화면에 보여주는 signals 기준으로 합산
-    state.total_score = total
-    state.level = esg_level_from_total(total)
-    return state
-
-
-# 역할: 최종 응답(ExternalRiskDetectResponse) 생성
-def esg_build_response(state: esg_State) -> ExternalRiskDetectResponse:
-    top_sources = sorted(list({d.source for d in state.docs if d.source}))[:10]
-    disclaimer = "본 결과는 ESG 관점의 외부 문서 기반 보조 신호이며, 메인 판정을 변경하지 않습니다."  # 20260131 이종헌 수정: ESG 전용 문구
-    if not state.docs:
-        disclaimer += " (분석할 외부 문서가 없어 신호가 제한될 수 있습니다.)"
-
-    return ExternalRiskDetectResponse(
-        external_risk_level=state.level,  # type: ignore
-        total_score=state.total_score,
-        signals=state.signals,
-        recommendations=esg_recommendations_from_signals(state.signals),
-        disclaimer=disclaimer,
-        retrieval_meta=RetrievalMeta(
-            search_used=bool(state.req.search.enabled and state.search_used),
-            rag_used=bool(state.req.rag.enabled and state.rag_used),
-            docs_count=len(state.docs),
-            top_sources=top_sources,
-        ),
-    )
-
-
-# 역할: LangGraph 그래프를 구성(순서 고정)
-def esg_build_graph() -> Optional[Any]:
-    if not _LG_AVAILABLE or StateGraph is None:
-        return None
-
-    g = StateGraph(esg_State)
-    g.add_node("load_docs", esg_node_load_docs)
-    g.add_node("rag", esg_node_rag)
-    g.add_node("analyze", esg_node_analyze)
-    g.add_node("score", esg_node_score)
-
-    g.set_entry_point("load_docs")
-    g.add_edge("load_docs", "rag")
-    g.add_edge("rag", "analyze")
-    g.add_edge("analyze", "score")
-    g.add_edge("score", END)
-    return g.compile()
-
-
-_GRAPH = esg_build_graph()
-
-
-# 역할: 외부 위험 감지를 실행하고 최종 응답을 반환(API/Streamlit에서 공용 호출)
-def esg_detect_external_risk(req: ExternalRiskDetectRequest) -> ExternalRiskDetectResponse:
-    state = esg_State(
-        req=req,
-        docs=[],
-        search_used=False,
-        rag_used=False,
-        rag_hits=[],
-        signals=[],
-        total_score=0.0,
-        level="LOW",
-    )
-
-    if _GRAPH is not None:
-        out = _GRAPH.invoke(state)
-        if isinstance(out, dict):
-            state = esg_State(**out)
-        else:
-            state = out
-    else:
-        state = esg_node_load_docs(state)
-        state = esg_node_rag(state)
-        state = esg_node_analyze(state)
-        state = esg_node_score(state)
-
-    return esg_build_response(state)
-
-# 20260202 이종헌 신규: 배치 감지(서버 내부에서 vendors 루프) - 기존 단건 함수 재사용
-def esg_detect_external_risk_batch(req: "ExternalRiskDetectBatchRequest") -> "ExternalRiskDetectBatchResponse":
-    # 20260202 이종헌 신규: 지연/timeout을 줄이기 위해 결과 리스트만 누적
-    items: list["BatchItem"] = []
-
-    for c in req.vendors:
-        try:
-            single = ExternalRiskDetectRequest(
-                company=c,
-                time_window_days=req.time_window_days,
-                categories=req.categories,
-                search=req.search,
-                documents=[],
-                rag=req.rag,
-                options=req.options,
-            )
-            result = esg_detect_external_risk(single)
-            items.append(BatchItem(company=c, result=result, error=None))
-        except Exception as e:
-            items.append(BatchItem(company=c, result=None, error=str(e)))
-
-    return ExternalRiskDetectBatchResponse(items=items)
+def _esg_level_from_score(score: float) -> RiskLevel:
+    if score >= 80.0:
+        return RiskLevel.HIGH
+    if score >= 40.0:
+        return RiskLevel.MEDIUM
+    return RiskLevel.LOW

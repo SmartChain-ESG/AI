@@ -1,32 +1,40 @@
-# AI/apps/out_risk_api/main.py
-
-# 20260131 이종헌 수정: FastAPI 엔트리포인트 + CORS 허용 + 라우터 등록 + 헬스체크
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
-# 수정: 루트에서 실행해도 'app.*' 임포트가 깨지지 않도록 경로 보강
 import os
 import sys
+import logging
+from pathlib import Path
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+# [추가] 환경 변수 로드 로직: 현재 파일 위치 기준 상위 3단계(AI/)의 .env 로드
+# AI / apps / out_risk_api / main.py -> AI / .env
+current_file = Path(__file__).resolve()
+env_path = current_file.parent.parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
+# 앱 모듈 경로 보강
 sys.path.append(os.path.dirname(__file__))
 
 from app.api.risk import router as risk_router
 
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("out_risk.main")
 
 def esg_create_app() -> FastAPI:
-    # 수정: FastAPI 메타 정보 추가(디버깅/문서화 편의)
-    app = FastAPI(title="out_risk_api", version="0.1.0")
+    app = FastAPI(
+        title="out_risk_api", 
+        version="0.1.0",
+        description="ESG 외부 리스크 모니터링 API (Senior Analyst 수정보완판)"
+    )
 
-    # 수정: CORS를 2번 등록하면 설정이 섞여서 디버깅이 어려움(1번만 유지)
+    # CORS 설정
     app.add_middleware(
         CORSMiddleware,
-        # 수정: 개발용 Origin만 명시 허용(React/Streamlit)
         allow_origins=[
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:8501",
-            "http://127.0.0.1:8501",
+            "http://localhost:3000", "http://127.0.0.1:3000",
+            "http://localhost:5173", "http://127.0.0.1:5173",
+            "http://localhost:8501", "http://127.0.0.1:8501",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -37,9 +45,15 @@ def esg_create_app() -> FastAPI:
 
     @app.get("/health")
     def esg_health() -> dict:
-        return {"ok": True, "service": "out_risk_api"}
+        # .env 로드 여부 체크 (디버깅용)
+        api_key_loaded = bool(os.getenv("OPENAI_API_KEY"))
+        return {
+            "ok": True, 
+            "service": "out_risk_api", 
+            "env_loaded": api_key_loaded,
+            "env_path": str(env_path)
+        }
 
     return app
-
 
 app = esg_create_app()
