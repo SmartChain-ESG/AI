@@ -84,4 +84,4 @@ manuals/
 **/manuals/
 *.pdf
 
-apps/out_risk_api/.chroma_out_risk/
+# vectordb/ 패턴이 apps/*/app/vectordb/ 도 매칭함
