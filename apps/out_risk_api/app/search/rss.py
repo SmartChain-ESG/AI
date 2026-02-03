@@ -137,6 +137,16 @@ def esg_search_rss(req: SearchPreviewRequest) -> List[DocItem]:
                 logger.warning("RSS fetch/parse failed: %s", str(e))
                 continue
 
-    filtered = _esg_filter_docs_relaxed(items)[:10]
+    # de-dup by url/title then filter
+    seen = set()
+    uniq: List[DocItem] = []
+    for d in items:
+        key = ((d.title or "").strip().lower(), (d.url or "").strip().lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(d)
+
+    filtered = _esg_filter_docs_relaxed(uniq)[:10]
     logger.info("RSS docs raw=%s filtered=%s", len(items), len(filtered))
     return filtered

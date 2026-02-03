@@ -149,7 +149,16 @@ def _esg_parse_gdelt_to_docs(data: Dict[str, Any]) -> List[DocItem]:
             )
         )
 
-    return docs
+    # de-dup by url/title
+    seen = set()
+    uniq: List[DocItem] = []
+    for d in docs:
+        key = ((d.title or "").strip().lower(), (d.url or "").strip().lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(d)
+    return uniq
 
 
 async def esg_search_documents(req: SearchPreviewRequest) -> List[DocItem]:

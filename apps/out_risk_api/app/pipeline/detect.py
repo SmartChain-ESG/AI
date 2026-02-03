@@ -22,6 +22,7 @@ from app.schemas.risk import (
     RiskLevel,
 )
 from app.search.provider import esg_search_documents
+from app.analyze.sentiment import esg_split_docs_by_sentiment
 from app.core import config as app_config
 
 logger = logging.getLogger("out_risk.detect")
@@ -116,19 +117,22 @@ async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatch
         except Exception as e:
             logger.warning("RAG error vendor=%s err=%s", vendor, e)
 
-    reason_3lines = _esg_make_reason_3lines(vendor, docs_used)
-    reason_1line = await _esg_make_reason_1line(vendor, docs_used)
-    total_score = _esg_calc_total_score(docs_used)
+    negative_docs, non_negative_docs = esg_split_docs_by_sentiment(docs_used)
+    docs_for_score = negative_docs
+
+    reason_3lines = _esg_make_reason_3lines(vendor, docs_for_score, non_negative_docs)
+    reason_1line = await _esg_make_reason_1line(vendor, docs_for_score)
+    total_score = _esg_calc_total_score(docs_for_score)
     level = _esg_level_from_score(total_score)
 
     return ExternalRiskDetectVendorResult(
         vendor=vendor,
         external_risk_level=level,
         total_score=float(total_score),
-        docs_count=len(docs_used),
+        docs_count=len(docs_for_score),
         reason_1line=reason_1line,
         reason_3lines=reason_3lines,
-        evidence=docs_used[:10],
+        evidence=docs_for_score[:10],
     )
 
 
@@ -136,12 +140,12 @@ def _esg_build_search_req(vendor: str, req: ExternalRiskDetectBatchRequest) -> S
     return SearchPreviewRequest(vendor=vendor, rag=req.rag)
 
 
-def _esg_make_reason_3lines(vendor: str, docs: List[DocItem]) -> List[str]:
+def _esg_make_reason_3lines(vendor: str, docs: List[DocItem], non_negative: List[DocItem]) -> List[str]:
     if not docs:
         return [
-            f"{vendor} 관련 외부 문서가 수집되지 않았습니다.",
-            "검색 공급자(GDELT/RSS) 응답 실패 또는 관련성 필터 과도 가능성이 있습니다.",
-            "preview로 수집 결과를 먼저 확인하세요.",
+            f"{vendor} 관련 부정 이슈 문서가 확인되지 않았습니다.",
+            f"긍정/중립 문서 {len(non_negative)}건은 점수에서 제외되었습니다.",
+            "필요하면 키워드/감정 규칙을 조정하세요.",
         ]
     sources = sorted({d.source for d in docs if d.source})[:3]
     return [
