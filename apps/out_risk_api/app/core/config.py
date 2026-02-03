@@ -9,18 +9,24 @@ from dotenv import load_dotenv
 logger = logging.getLogger("esg_config")
 
 # 1. 경로 설정: config.py 기준으로 5단계 위가 AI(루트) 폴더
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
-ENV_PATH = BASE_DIR / ".env"
+# 변경 (위로 올라가며 .env 찾기)
+def _find_env_path(start: Path) -> Path | None:
+    for p in start.parents:
+        candidate = p / ".env"
+        if candidate.exists():
+            return candidate
+    return None
+
+ENV_PATH = _find_env_path(Path(__file__).resolve())
+BASE_DIR = ENV_PATH.parent if ENV_PATH else Path(__file__).resolve().parents[4]
+
 
 # 2. .env 로드 로직
-if ENV_PATH.exists():
-    # override=True: 로컬 테스트 시 시스템 변수보다 .env를 우선 (개발 편의성)
+if ENV_PATH and ENV_PATH.exists():
     load_dotenv(dotenv_path=ENV_PATH, override=True)
-    # logger.info(f".env loaded from: {ENV_PATH}")
 else:
-    # 예비책: 현재 작업 디렉토리 기준 탐색
     load_dotenv()
-    # logger.warning(".env not found at root, using default system environment variables.")
+
 
 # 3. 라이브러리 가용성 체크 (Pylance 에러 방지 및 런타임 안정성)
 _LC_IMPORT_ERROR = ""
