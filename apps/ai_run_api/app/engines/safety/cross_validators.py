@@ -24,25 +24,53 @@ CROSS_PAIRS: list[tuple[str, str]] = [
 def _count_attendance_names(extracted: dict) -> int | None:
     """출석부 PDF에서 서명/이름 행 수를 추정.
 
-    출석부는 스캔본 PDF이므로 OCR 텍스트에서
-    줄 단위로 이름+서명 패턴이 반복되는 행 수를 센다.
+    전략:
+    1) 전체 텍스트에서 한글 이름(2~4자)이 2회 연속 등장하는 패턴을 카운트
+       (출석부에서 "이름 → ... → 서명(이름 반복)" 구조)
+    2) 폴백: 숫자 번호(1, 2, 3...)로 시작하는 줄 → 행 번호 최대값
+    3) 폴백: "N명" 패턴 직접 탐색
     """
     text = extracted.get("text", "") or ""
     if not text.strip():
         return None
 
-    # 간단 휴리스틱: "이름" 또는 한글 2~4자가 줄 시작에 나오는 행 수
-    # 출석부 형태: 날짜 | 교육명 | 이름 | 서명(O/✓/자필)
+    # 전략 1: 한글 이름(2~4자)이 텍스트에서 2회 이상 등장하는 고유 이름 수
+    # 출석부는 이름이 "성명" 칸과 "서명" 칸에 2번 나옴
+    name_pattern = re.findall(r"[가-힣]{2,4}", text)
+    # 헤더 키워드 제외
+    _HEADER_WORDS = {
+        "안전보건", "교육", "출석부", "교육일자", "교육명", "번호",
+        "성명", "부서", "출석", "확인", "서명", "생산", "품질관리",
+        "설비기술", "안전관리", "공정기술", "물류", "외주관리",
+    }
+    filtered = [n for n in name_pattern if n not in _HEADER_WORDS]
+    if filtered:
+        from collections import Counter
+        name_counts = Counter(filtered)
+        # 2회 이상 등장한 이름 = 서명란에 이름이 반복된 것
+        duplicates = [n for n, c in name_counts.items() if c >= 2]
+        if duplicates:
+            return len(duplicates)
+
+    # 전략 2: 숫자 번호로 시작하는 줄의 최대값
     lines = text.strip().split("\n")
-    count = 0
+    max_num = 0
     for line in lines:
         line = line.strip()
-        if not line:
-            continue
-        # 한글 이름(2~4자) + 서명 표시가 있는 행
-        if re.search(r"[가-힣]{2,4}", line) and re.search(r"(서명|sign|O|✓|v|√|자필|참석)", line, re.IGNORECASE):
-            count += 1
-    return count if count > 0 else None
+        m = re.match(r"^(\d{1,3})$", line)
+        if m:
+            num = int(m.group(1))
+            if 1 <= num <= 500:
+                max_num = max(max_num, num)
+    if max_num > 0:
+        return max_num
+
+    # 전략 3: "N명" 패턴
+    m = re.search(r"(\d+)\s*명", text)
+    if m:
+        return int(m.group(1))
+
+    return None
 
 
 def _count_photo_people(extracted: dict) -> int | None:
@@ -110,8 +138,8 @@ def cross_validate_slot(
             reasons.append("CROSS_PHOTO_COUNT_FAILED")
             extras["detail"] = "교육사진에서 인원수를 감지하지 못했습니다."
         else:
-            extras["attendance_count"] = attendance_count
-            extras["photo_count"] = photo_count
+            extras["attendance_count"] = str(attendance_count)
+            extras["photo_count"] = str(photo_count)
             diff = abs(attendance_count - photo_count)
             # 허용 오차: 소규모(10명 이하)는 2명, 그 이상은 20%
             if attendance_count <= 10:
@@ -121,8 +149,8 @@ def cross_validate_slot(
 
             if diff > tolerance:
                 reasons.append("CROSS_HEADCOUNT_MISMATCH")
-                extras["diff"] = diff
-                extras["tolerance"] = tolerance
+                extras["diff"] = str(diff)
+                extras["tolerance"] = str(tolerance)
                 extras["detail"] = (
                     f"출석부 {attendance_count}명 vs 사진 {photo_count}명 "
                     f"(차이 {diff}명, 허용 {tolerance}명)"
