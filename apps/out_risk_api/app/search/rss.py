@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 from urllib.parse import urlparse, quote_plus
 from email.utils import parsedate_to_datetime
 
-from app.schemas.risk import DocItem, ExternalRiskDetectRequest
+from app.schemas.risk import DocItem, SearchPreviewRequest
 from app.search.rss_sources import RSS_FEEDS
 from app.search.aliases import esg_expand_company_terms
 
@@ -32,13 +32,13 @@ def esg_safe_ymd(pub_text: str) -> str:
         except Exception:
             return ""
 
-def esg_search_rss(req: ExternalRiskDetectRequest) -> List[DocItem]:
+def esg_search_rss(req: SearchPreviewRequest) -> List[DocItem]:
     """
     [핵심 함수] RSS 피드를 순회하며 리스크 기사를 수집합니다.
     """
     # 1. 동적 검색 피드 생성 로직 (함수 내부 정의)
-    def esg_build_rss_search_feeds(req: ExternalRiskDetectRequest) -> list[str]:
-        base_q = (req.search.query or "").strip() or (req.company.name or "").strip()
+    def esg_build_rss_search_feeds(req: SearchPreviewRequest) -> list[str]:
+        base_q = (req.vendor or "").strip()
         if not base_q: return []
         
         # Alias 확장 (예: SK하이닉스 -> SK Hynix, 하이닉스)

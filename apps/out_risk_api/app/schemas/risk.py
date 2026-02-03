@@ -47,6 +47,7 @@ class ExternalRiskDetectBatchResponse(BaseModel):
 
 class SearchPreviewRequest(BaseModel):
     vendor: str
+    gdelt_url: Optional[str] = None
     rag: RagConfig = Field(default_factory=RagConfig)
 
 

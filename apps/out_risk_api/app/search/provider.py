@@ -1,25 +1,52 @@
-# AI/apps/out_risk_api/app/search/provider.py
-
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 
-from app.schemas.risk import DocItem
+from app.schemas.risk import DocItem, SearchPreviewRequest
+from app.search.aliases import esg_expand_company_terms
+from app.search.rss import esg_search_rss
 
 logger = logging.getLogger("out_risk")
 
+GDELT_DOC_API = "https://api.gdeltproject.org/api/v2/doc/doc"
 
-async def esg_search_gdelt(req) -> List[DocItem]:
-    # 신규: 외부 검색이 느려져도 서버 전체가 기다리지 않게 타임아웃을 더 빡빡하게
+
+def _build_gdelt_query(terms: List[str]) -> str:
+    quoted = [f"\"{t}\"" for t in terms if t]
+    if not quoted:
+        return ""
+    if len(quoted) == 1:
+        return quoted[0]
+    return "(" + " OR ".join(quoted) + ")"
+
+
+def _build_gdelt_url(query: str, max_records: int = 50) -> str:
+    params = {
+        "query": query,
+        "mode": "ArtList",
+        "format": "json",
+        "maxrecords": str(max_records),
+        "sort": "DateDesc",
+    }
+    return str(httpx.URL(GDELT_DOC_API, params=params))
+
+
+async def esg_search_gdelt(req: SearchPreviewRequest) -> List[DocItem]:
     esg_timeout = httpx.Timeout(6.0, connect=3.0)
 
     try:
-        async with httpx.AsyncClient(timeout=esg_timeout) as client:  # 수정: timeout 적용
-            r = await client.get(req.gdelt_url)
+        gdelt_url: Optional[str] = getattr(req, "gdelt_url", None)
+        if not gdelt_url:
+            terms = esg_expand_company_terms(req.vendor) or [req.vendor]
+            query = _build_gdelt_query(terms[:3])
+            gdelt_url = _build_gdelt_url(query)
+
+        async with httpx.AsyncClient(timeout=esg_timeout) as client:
+            r = await client.get(gdelt_url)
 
         ctype = (r.headers.get("content-type") or "").lower()
         if "json" not in ctype:
@@ -32,7 +59,11 @@ async def esg_search_gdelt(req) -> List[DocItem]:
             logger.warning("GDELT json decode failed: status=%s head=%s", r.status_code, r.text[:120])
             return []
 
-        return _esg_parse_gdelt_to_docs(data)
+        docs = _esg_parse_gdelt_to_docs(data)
+        filtered = _esg_filter_docs_by_terms(docs, terms)
+        if not filtered and docs:
+            logger.warning("GDELT returned docs but none matched terms: %s", terms)
+        return filtered
     except httpx.TimeoutException:
         logger.warning("GDELT timeout")
         return []
@@ -68,5 +99,21 @@ def _esg_parse_gdelt_to_docs(data: Dict[str, Any]) -> List[DocItem]:
     return docs
 
 
-async def esg_search_documents(req) -> List[DocItem]:
-    return await esg_search_gdelt(req)
+def _esg_filter_docs_by_terms(docs: List[DocItem], terms: List[str]) -> List[DocItem]:
+    if not docs or not terms:
+        return docs
+    lowered = [t.lower() for t in terms if t]
+    kept: List[DocItem] = []
+    for d in docs:
+        hay = " ".join([d.title or "", d.snippet or "", d.source or ""]).lower()
+        if any(t in hay for t in lowered):
+            kept.append(d)
+    return kept
+
+
+async def esg_search_documents(req: SearchPreviewRequest) -> List[DocItem]:
+    docs = await esg_search_gdelt(req)
+    if docs:
+        return docs
+    # Fallback to RSS if GDELT is empty
+    return esg_search_rss(req)
