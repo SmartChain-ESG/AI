@@ -10,7 +10,7 @@
 
 ---
 
-## 👥 프로젝트 팀 구성 (Contributors)
+## 프로젝트 팀 구성 (Contributors)
 
 프로젝트를 이끄는 핵심 인력 및 역할 분담 현황입니다.
 
@@ -22,19 +22,21 @@
 
 ---
 
-## 💻 Tech Stack
+## Tech Stack
 
 ![Python](https://img.shields.io/badge/Python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
-![OpenAI](https://img.shields.io/badge/OpenAI_GPT--5.1-412991?style=for-the-badge&logo=openai&logoColor=white)
-![YOLOv8](https://img.shields.io/badge/YOLOv8-00FFFF?style=for-the-badge&logo=yolo&logoColor=black)
+![OpenAI](https://img.shields.io/badge/OpenAI_GPT-412991?style=for-the-badge&logo=openai&logoColor=white)
+![YOLO26](https://img.shields.io/badge/YOLO26-00FFFF?style=for-the-badge&logo=yolo&logoColor=black)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-FF6F00?style=for-the-badge)
 ![Git](https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white)
 
 | 구분 | 기술 |
 |------|------|
 | Framework | FastAPI + Uvicorn |
 | LLM | OpenAI GPT-4o-mini (텍스트/데이터), GPT-5.1 (Vision/최종판정) |
-| Object Detection | YOLOv8n (CrowdHuman fine-tuned, 인원수 감지) |
+| Object Detection | YOLO26n (CrowdHuman fine-tuned, 인원수 감지) |
+| Vector DB | ChromaDB (RAG 기반 검색) |
 | OCR | Naver Clova OCR |
 | 파싱 | PyMuPDF (PDF), pandas + openpyxl (XLSX/CSV) |
 | HTTP | httpx (비동기 다운로드/OCR 호출) |
@@ -42,83 +44,36 @@
 
 ---
 
-## 🏗 시스템 아키텍처
-
-```
-Client (프론트엔드)
-  │
-  ├─ POST /run/preview   ← 파일 분류 + 슬롯 추정
-  ├─ POST /run/submit    ← 6단계 파이프라인 실행
-  └─ GET  /health        ← 헬스체크
-```
-
-### Apps 구조
+## 시스템 아키텍처
 
 ```
 apps/
-├── ai_run_api/     ← 핵심 검증 엔진 (본 문서 대상)
-├── chatboot_api/   ← 챗봇 API
-├── out_risk_api/   ← 외부 리스크 분석 API
-├── report_api/     ← 리포트 생성 API
-└── safety_api/     ← (예정)
+├── ai_run_api/      [메인] 협력사 문서 자동 검증 엔진
+├── chatbot_api/     [서브] 컴플라이언스 규정 Q&A 챗봇
+└── out_risk_api/    [서브] 외부 뉴스 기반 ESG 리스크 분석
 ```
+
+### API 포트 구성
+
+| API | 포트 | 설명 |
+|-----|------|------|
+| ai_run_api | 8000 | 메인 검증 엔진 |
+| chatbot_api | 8001 | 규정 Q&A 챗봇 |
+| out_risk_api | 8002 | 외부 리스크 분석 |
 
 ---
 
-## 📂 ai_run_api 디렉토리 구조
+## [메인] ai_run_api - 협력사 문서 자동 검증
 
-```
-app/
-├── main.py                        # FastAPI 진입점 + /health
-├── api/
-│   └── run.py                     # POST /run/preview, /run/submit 라우터
-├── schemas/
-│   └── run.py                     # Pydantic 스키마 (Verdict, RiskLevel, SlotResult 등)
-├── pipeline/
-│   ├── preview.py                 # Preview 파이프라인 (슬롯 추정)
-│   ├── triage.py                  # Phase 1: 파일 분류 (확장자/패턴 매칭)
-│   └── submit.py                  # Phase 1~6 Submit 파이프라인
-├── engines/
-│   ├── registry.py                # 도메인 디스패치 (safety/compliance/esg)
-│   ├── safety/
-│   │   ├── slots.py               # 슬롯 정의 (필수/선택, 파일 패턴)
-│   │   ├── rules.py               # REASON_CODES + EXPECTED_HEADERS
-│   │   ├── validators.py          # 룰 기반 검증 로직
-│   │   └── cross_validators.py    # 교차 검증 (출석부 vs 교육사진)
-│   ├── compliance/
-│   │   ├── slots.py
-│   │   ├── rules.py
-│   │   ├── validators.py
-│   │   └── cross_validators.py
-│   └── esg/
-│       ├── slots.py
-│       ├── rules.py
-│       ├── validators.py
-│       └── cross_validators.py    # 에너지/유해물질/윤리경영 교차 검증
-├── extractors/
-│   ├── pdf_text.py                # PDF 텍스트 추출 + 조건부 OCR 폴백
-│   ├── xlsx.py                    # XLSX/CSV 파싱 (헤더 검증 포함)
-│   ├── ocr/
-│   │   ├── clova_client.py        # Naver Clova OCR 클라이언트
-│   │   └── ocr_router.py          # 이미지 OCR 라우터
-│   └── yolo/
-│       ├── person_counter.py      # YOLOv8 인원수 감지 래퍼
-│       └── yolo26n_crowdhuman_fewshot.pt  # CrowdHuman fine-tuned 모델 가중치
-├── llm/
-│   ├── client.py                  # ask_llm() / ask_llm_vision() (Light/Heavy 분기)
-│   └── prompts.py                 # 도메인별 프롬프트 (PDF/Image/Data/Judge/Clarify)
-├── storage/
-│   ├── downloader.py              # SAS URL → 바이트 다운로드
-│   └── tmp_store.py               # 인메모리 패키지 임시 저장
-├── core/
-│   ├── config.py                  # 환경변수 (OPENAI_API_KEY, MODEL 등)
-│   └── errors.py                  # HTTP 예외 클래스
-└── db/                            # (추후 PostgreSQL 연동 예정)
-```
+### 엔드포인트
 
----
+| Method | Path | 설명 |
+|--------|------|------|
+| `GET` | `/health` | 서버 상태 확인 |
+| `POST` | `/run/preview` | 파일 분류 + 슬롯 추정 |
+| `POST` | `/run/submit` | 6단계 파이프라인 실행 → verdict + risk_level 반환 |
 
-## 🔄 Submit 파이프라인 (6단계)
+### Submit 파이프라인 (6단계)
 
 ```
 (1) TRIAGE        파일 분류 — 확장자/MIME 판별, 열 수 있는지 체크
@@ -136,19 +91,17 @@ app/
 (6) JUDGE FINAL   최종 집계 — 전체 verdict + risk_level + why 산출
 ```
 
----
+### Verdict & Risk Level 기준
 
-## ⚖️ Verdict & Risk Level 기준
-
-### Verdict (슬롯 단위)
+**Verdict (슬롯 단위)**
 
 | Verdict | 의미 | 조건 |
 |---------|------|------|
-| **NEED_FIX** | 파일 자체 문제 (분석 불가) | MISSING_SLOT, PARSE_FAILED, HEADER_MISMATCH, EMPTY_TABLE, OCR_FAILED |
-| **NEED_CLARIFY** | 내용 문제 (분석 완료, 이슈 발견) | VIOLATION_DETECTED, LOW_EDUCATION_RATE, SIGNATURE_MISSING, E2_SPIKE_DETECTED, E3_BILL_MISMATCH, LLM_ANOMALY_DETECTED 등 |
+| **NEED_FIX** | 파일 자체 문제 (분석 불가) | MISSING_SLOT, PARSE_FAILED, HEADER_MISMATCH 등 |
+| **NEED_CLARIFY** | 내용 문제 (분석 완료, 이슈 발견) | VIOLATION_DETECTED, LOW_EDUCATION_RATE 등 |
 | **PASS** | 이상 없음 | reason 없음 |
 
-### Risk Level (업체 단위 집계)
+**Risk Level (업체 단위 집계)**
 
 | Risk Level | 조건 |
 |------------|------|
@@ -156,62 +109,157 @@ app/
 | **MEDIUM** | NEED_FIX 없음, Safety/Compliance에 NEED_CLARIFY 있음 |
 | **LOW** | 모두 PASS 또는 ESG 도메인에만 NEED_CLARIFY |
 
-> ESG의 NEED_CLARIFY(사용량 급증 등)는 모니터링 대상으로, risk_level을 LOW 이상으로 올리지 않습니다.
+### 디렉토리 구조
 
----
-
-## 🤖 AI 모델 전략
-
-| 모델 | 환경변수 | 용도 |
-|------|----------|------|
-| GPT-4o-mini (Light) | `OPENAI_MODEL_LIGHT` | PDF 분석, 데이터 분석, 보완요청 생성 |
-| GPT-5.1 (Heavy) | `OPENAI_MODEL_HEAVY` | Vision 이미지 분석 (위반사항/장면 설명), 최종 판정 (JUDGE_FINAL) |
-| YOLOv8n (CrowdHuman) | — | 이미지 인원수 감지 (교차검증용, YOLO 우선 → LLM 폴백) |
-
----
-
-## 🚀 실행 방법
-
-```bash
-# 1. 의존성 설치
-pip install -r requirements.txt
-
-# 2. 환경변수 설정
-cp .env.example .env
-# .env 파일에 OPENAI_API_KEY, CLOVA_OCR_* 등 설정
-
-# 3. 서버 실행
-cd apps/ai_run_api
-uvicorn app.main:app --reload --port 8000
-
-# 4. 헬스체크
-curl http://localhost:8000/health
 ```
-
-### Streamlit 테스트 UI (선택)
-
-```bash
-streamlit run apps/ai_run_api/ui/streamlit_app.py
+apps/ai_run_api/app/
+├── main.py                 # FastAPI 진입점 + /health
+├── api/run.py              # POST /run/preview, /run/submit
+├── schemas/run.py          # Pydantic 스키마
+├── pipeline/               # Preview, Triage, Submit 파이프라인
+├── engines/                # 도메인별 검증 로직 (safety/compliance/esg)
+├── extractors/             # PDF, XLSX, OCR, YOLO 추출기
+├── llm/                    # LLM 클라이언트 + 프롬프트
+├── storage/                # 다운로더, 임시 저장소
+└── core/                   # 설정, 에러 처리
 ```
 
 ---
 
-## 📋 API 엔드포인트
+## [서브] chatbot_api - 컴플라이언스 Q&A 챗봇
+
+사내 컴플라이언스 규정 문서를 벡터DB(ChromaDB)에 저장하고, RAG 기반으로 질문에 답변하는 챗봇입니다.
+
+### 엔드포인트
 
 | Method | Path | 설명 |
 |--------|------|------|
 | `GET` | `/health` | 서버 상태 확인 |
-| `POST` | `/run/preview` | 파일 분류 + 슬롯 추정 |
-| `POST` | `/run/submit` | 6단계 파이프라인 실행 → verdict + risk_level 반환 |
+| `POST` | `/chat` | 사용자 질문 → RAG 기반 답변 |
+| `POST` | `/admin/upload` | 규정 문서 업로드 (관리자용, API Key 필요) |
+
+### 디렉토리 구조
+
+```
+apps/chatbot_api/app/
+├── main.py                 # FastAPI 진입점
+├── api/chat.py             # 채팅 엔드포인트
+├── api/admin.py            # 관리자 문서 업로드
+├── rag/                    # ChromaDB + RAG 로직
+├── core/config.py          # pydantic-settings 기반 설정
+└── vectordb/               # ChromaDB 저장 경로 (gitignore)
+```
 
 ---
 
-## 🔧 환경변수
+## [서브] out_risk_api - 외부 리스크 분석
 
-| 변수명 | 설명 |
-|--------|------|
-| `OPENAI_API_KEY` | OpenAI API 키 |
-| `OPENAI_MODEL_LIGHT` | 텍스트/데이터 분석 모델 (기본: gpt-4o-mini) |
-| `OPENAI_MODEL_HEAVY` | Vision/최종판정 모델 (기본: gpt-5.1) |
-| `CLOVA_OCR_API_URL` | Naver Clova OCR API URL |
-| `CLOVA_OCR_SECRET` | Clova OCR Secret Key |
+협력사명으로 GDELT/RSS 뉴스를 검색하고, ESG 키워드 기반 감정 분석으로 외부 리스크 점수를 산출합니다.
+
+### 엔드포인트
+
+| Method | Path | 설명 |
+|--------|------|------|
+| `GET` | `/health` | 서버 상태 확인 |
+| `POST` | `/risk/external/detect` | 협력사 리스트 → 외부 리스크 분석 |
+| `POST` | `/risk/external/search/preview` | 검색 결과 미리보기 |
+
+### 리스크 산출 방식
+
+1. 협력사명으로 GDELT API / Google RSS 검색
+2. ESG 키워드 필터링 (사고, 환경오염, 법적 분쟁 등)
+3. 감정 분석으로 부정 문서 분류
+4. 문서 발행일 기준 가중치 적용 (최근 30일: 1.5x, 90일: 1.0x, 180일: 0.7x)
+5. 총점 기반 리스크 레벨 산출 (HIGH ≥10, MEDIUM ≥5, LOW <5)
+
+### 디렉토리 구조
+
+```
+apps/out_risk_api/app/
+├── main.py                 # FastAPI 진입점
+├── api/risk.py             # 리스크 분석 엔드포인트
+├── pipeline/detect.py      # 검색 → 분석 → 점수화 파이프라인
+├── search/                 # GDELT, RSS 검색 프로바이더
+├── analyze/sentiment.py    # 감정 분석 (키워드 기반)
+├── rag/                    # ChromaDB 연동 (선택적 RAG)
+└── core/config.py          # 환경변수 설정
+```
+
+---
+
+## 실행 방법
+
+### 1. 의존성 설치
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. 환경변수 설정
+
+```bash
+cp .env.example .env
+# .env 파일 편집하여 API 키 등 설정
+```
+
+### 3. 서버 실행
+
+```bash
+# ai_run_api (메인) - 포트 8000
+uvicorn app.main:app --reload --port 8000 --app-dir apps/ai_run_api
+
+# chatbot_api (서브) - 포트 8001
+uvicorn app.main:app --reload --port 8001 --app-dir apps/chatbot_api
+
+# out_risk_api (서브) - 포트 8002
+uvicorn app.main:app --reload --port 8002 --app-dir apps/out_risk_api
+```
+
+### 4. Streamlit 테스트 UI (선택)
+
+```bash
+# ai_run_api UI
+streamlit run apps/ai_run_api/app/ui/streamlit_app.py
+
+# chatbot_api UI
+streamlit run apps/chatbot_api/app/ui/streamlit_app.py
+
+# out_risk_api UI
+streamlit run apps/out_risk_api/app/ui/streamlit_app.py
+```
+
+---
+
+## 환경변수 (.env)
+
+```env
+# === 공통 ===
+OPENAI_API_KEY="사용자지정"
+
+# === ai_run_api ===
+CLOVA_INVOKE_URL="사용자지정"
+CLOVA_OCR_SECRET="사용자지정"
+OPENAI_MODEL_LIGHT="gpt-4o-mini"
+OPENAI_MODEL_HEAVY="gpt-5.1"
+
+# === chatbot_api ===
+OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
+CHATBOT_CHROMA_PATH="apps/chatbot_api/app/vectordb"
+CHATBOT_CHROMA_COLLECTION="hd_hhi_compliance_kb"
+ADMIN_API_KEY="사용자지정"
+
+# === out_risk_api ===
+OUT_RISK_CHROMA_PATH="apps/out_risk_api/app/vectordb"
+OUT_RISK_CHROMA_COLLECTION="hd_hhi_out_risk_kb"
+```
+
+---
+
+## AI 모델 전략
+
+| 모델 | 환경변수 | 용도 |
+|------|----------|------|
+| GPT-4o-mini (Light) | `OPENAI_MODEL_LIGHT` | PDF 분석, 데이터 분석, 보완요청 생성 |
+| GPT-5.1 (Heavy) | `OPENAI_MODEL_HEAVY` | Vision 이미지 분석, 최종 판정 |
+| text-embedding-3-small | `OPENAI_EMBEDDING_MODEL` | RAG 임베딩 (chatbot_api) |
+| YOLO26n (CrowdHuman Few-shot Learning) | — | 이미지 인원수 감지 (ai_run_api) |
