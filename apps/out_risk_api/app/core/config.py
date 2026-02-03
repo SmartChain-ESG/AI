@@ -56,7 +56,10 @@ OPENAI_API_KEY = esg_env("OPENAI_API_KEY", "")
 OPENAI_MODEL_LIGHT = esg_env("OPENAI_MODEL_LIGHT", "gpt-4o-mini")
 
 # Chroma 관련 설정 (경로는 프로젝트 루트 기준 혹은 절대경로 권장)
-CHROMA_PERSIST_DIR = esg_env("CHROMA_PERSIST_DIR", str(BASE_DIR / "data" / "chroma_db"))
+CHROMA_PERSIST_DIR = esg_env(
+    "CHROMA_PERSIST_DIR",
+    str(Path(__file__).resolve().parent / ".chroma_out_risk")
+)
 CHROMA_COLLECTION = esg_env("CHROMA_COLLECTION", "out_risk")
 
 RAG_TOP_K_DEFAULT = esg_env_int("RAG_TOP_K_DEFAULT", 6)

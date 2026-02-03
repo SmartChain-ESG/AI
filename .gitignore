@@ -83,3 +83,5 @@ chroma.sqlite3
 manuals/
 **/manuals/
 *.pdf
+
+apps/out_risk_api/.chroma_out_risk/

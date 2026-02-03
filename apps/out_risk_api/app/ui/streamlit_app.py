@@ -229,7 +229,7 @@ def esg_render() -> None:
     with st.sidebar:
         st.header("실행 설정")
 
-        api_base = st.text_input("API Base URL", value="http://localhost:8000")
+        api_base = st.text_input("API Base URL", value="http://localhost:8002")
         st.divider()
         st.header("RAG (Chroma)")
         rag_enabled = st.toggle("rag.enabled", value=False)
