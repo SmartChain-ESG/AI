@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-small"
 
     # Vector DB
-    chroma_path: str = "apps/chatboot_api/app/vectordb"
+    chroma_path: str = "apps/chatbot_api/app/vectordb"
     chroma_collection: str = "hd_hhi_compliance_kb"
 
     # Admin 보호
