@@ -32,6 +32,7 @@ class ExternalRiskDetectVendorResult(BaseModel):
     external_risk_level: RiskLevel
     total_score: float = Field(ge=0)
     docs_count: int = Field(ge=0)
+    reason_1line: Optional[str] = None
     reason_3lines: List[str] = Field(default_factory=list)
     evidence: List[DocItem] = Field(default_factory=list)
 

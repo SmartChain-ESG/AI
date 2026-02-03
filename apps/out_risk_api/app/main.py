@@ -1,4 +1,4 @@
-#AI/apps/out_risk_api/main.py
+#AI/apps/out_risk_api/app/main.py
 
 import os
 import sys

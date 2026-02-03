@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import chromadb
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import CHROMA_PERSIST_DIR
@@ -22,7 +21,9 @@ router = APIRouter(prefix="/risk", tags=["risk"])
 @router.post("/external/detect", response_model=ExternalRiskDetectBatchResponse)
 async def esg_api_external_detect(req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectBatchResponse:
     try:
-        return await esg_detect_external_risk_batch(req)
+        return await asyncio.wait_for(esg_detect_external_risk_batch(req), timeout=20.0)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Detect timed out")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -38,6 +39,8 @@ async def esg_api_external_search_preview(req: SearchPreviewRequest) -> SearchPr
 
 
 def _chroma_heartbeat_sync() -> dict:
+    import chromadb
+
     client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
     heartbeat = client.heartbeat()
     return {"status": "ok", "heartbeat": heartbeat}
