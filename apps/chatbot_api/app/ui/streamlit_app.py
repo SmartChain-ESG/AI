@@ -16,6 +16,9 @@ with st.sidebar:
     api_base = st.text_input("API Base URL", API_BASE)
     domain = st.selectbox("domain", ["all", "compliance", "esg", "safety"], index=0)
     top_k = st.slider("top_k", 1, 15, 5)
+    file_url = st.text_input("File URL (Optional)", help="테스트할 PDF의 URL을 입력하세요 (예: S3 Presigned URL)")
+    if file_url:
+        st.info("📄 파일 URL이 입력되었습니다. 아래 채팅창에 질문을 입력하면 분석이 시작됩니다.")
 
     st.divider()
     st.subheader("Admin (Sync)")
@@ -54,6 +57,7 @@ if prompt:
     # 서버 호출
     payload = {
         "message": prompt,
+        "file_url": file_url if file_url else None,
         "session_id": "streamlit-demo",   # 필요하면 유저별로 바꿔도 됨
         "domain": domain,
         "top_k": top_k,
