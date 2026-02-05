@@ -40,6 +40,7 @@ class SourceItem(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    file_url: Optional[str] = None
     session_id: Optional[str] = None
     domain: Domain = Domain.all
     top_k: int = Field(default=8, ge=1, le=30)
