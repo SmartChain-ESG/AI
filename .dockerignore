@@ -1,0 +1,14 @@
+# 전체 제외 (기본)
+.git
+.vscode
+__pycache__
+*.pyc
+venv/
+.env
+*.log
+
+# 모든 앱 폴더 허용 (하나씩 !를 붙이기 번거로우면 아래와 같이 설정)
+!requirements.txt
+!apps/ai_run_api/**
+!apps/chatbot_api/**
+!apps/out_risk_api/**

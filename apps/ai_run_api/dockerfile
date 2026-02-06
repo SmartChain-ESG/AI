@@ -1,0 +1,38 @@
+# 1. 베이스 이미지
+FROM python:3.11-slim
+
+# 2. 작업 디렉토리 설정
+WORKDIR /app
+
+# 3. 시스템 의존성 설치 (libgl1-mesa-glx 대신 libgl1 사용으로 에러 방지)
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4. [핵심] CPU 전용 패키지 우선 설치
+# --extra-index-url을 사용해 GPU용 CUDA 라이브러리가 포함되지 않은 cpu 버전을 강제합니다.
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch \
+    torchvision \
+    ultralytics
+
+# 5. 나머지 의존성 설치 (위에서 수정된 requirements.txt)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 6. 소스 코드 복사 (AI 루트 기준)
+COPY . .
+# 6. 소스 코드 복사 (AI 루트 기준)
+COPY . .
+
+# 7. 환경 변수 설정 (핵심 수정 부분)
+# 기존 /app에 실제 소스 경로인 /app/apps/ai_run_api를 추가합니다.
+# 이렇게 하면 main.py의 'from app.api...' 문구가 정상 작동합니다.
+ENV PYTHONPATH=/app:/app/apps/ai_run_api
+EXPOSE 8000
+
+# 8. 실행 명령 수정
+# PYTHONPATH를 설정했으므로, 모듈 경로를 'app.main:app'으로 단순화하여 호출할 수 있습니다.
+# 이는 내부 import 구조와 일치하게 만들어 오류를 방지합니다.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

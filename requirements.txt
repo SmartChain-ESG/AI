@@ -1,58 +1,37 @@
-########## Main Service ##########
+########## Common & Service Specific Requirements ##########
 
-# --- Web API (FastAPI) ---
+# --- Web API & Core (FastAPI) ---
 fastapi>=0.110,<1.0
 uvicorn[standard]>=0.27,<1.0
 python-multipart>=0.0.9
 pydantic>=2.6,<3.0
+pydantic-settings>=2.2.1  # Settings 관리용 필수
 
 # --- Env / Config ---
 python-dotenv>=1.0.1
 
-# --- HTTP client (파일 다운로드 / Clova OCR) ---
+# --- HTTP client (파일 다운로드 / API 통신) ---
 httpx>=0.27.0
 
-# --- File / Data parsing ---
+# --- LLM (OpenAI & LangChain) ---
+openai>=1.30.0
+langchain>=0.1.0
+langchain-openai>=0.1.0
+langchain-community>=0.0.20
+langchain-text-splitters>=0.0.1  # [수정] 현재 에러 지점 해결
+
+# --- [ai-run-api] File & Vision ---
 pandas>=2.1.4
 openpyxl>=3.1.2
 PyMuPDF>=1.24.0
-
-# --- LLM (OpenAI) ---
-openai>=1.30.0
-
-# --- Vision (YOLO person detection) ---
 ultralytics>=8.0.0
+
+# --- [chatbot-api / out-risk-api] RAG & Vector DB ---
+chromadb>=0.4.24
+sentence-transformers>=2.2.2
+rank-bm25>=0.2.2  # [수정] 이전 에러 지점 해결
+tiktoken>=0.5.2   # 토큰 계산용 (LangChain 사용 시 필수인 경우가 많음)
 
 # --- Test ---
 pytest>=7.4.0
 pytest-asyncio>=0.23.0
-
-# --- Vision (YOLO person detection) ---
-ultralytics>=8.0.0
-
-########## SUB Service ##########
-
-# --- RISK Service (LangChain & RAG) ---
-langchain>=0.1.20
-langchain-openai>=0.1.6
-langchain-chroma>=0.1.0
-langchain-text-splitters>=0.0.1
-langgraph>=0.0.39
-chromadb>=0.4.24
-numpy==1.26.4
-
-# --- ChatBot Service ---
-pydantic-settings>=2.0.0
-# --- [NEW] RAG & Hybrid Search (추가된 항목) ---
-# 환경 변수 관리 (Pydantic v2 호환용)
-pydantic-settings>=2.0.0
-
-# 벡터 데이터베이스
-chromadb>=0.4.0
-
-# 텍스트 청킹 (Chunking) 도구
-langchain>=0.1.0
-langchain-text-splitters>=0.0.1
-
-# 키워드 검색 (BM25) 알고리즘
-rank-bm25>=0.2.0

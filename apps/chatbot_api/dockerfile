@@ -1,0 +1,37 @@
+# 1. 베이스 이미지
+FROM python:3.11-slim
+
+# 2. 작업 디렉토리 설정
+WORKDIR /app
+
+# 3. 시스템 의존성 설치
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4. [핵심] CPU 전용 PyTorch 강제 설치
+# 챗봇 이미지 용량의 대부분을 차지하는 CUDA(GPU) 라이브러리를 제외합니다.
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch \
+    torchvision
+
+# 5. 나머지 의존성 설치
+# 이미 torch가 설치되어 있으므로 requirements.txt에 torch가 있어도 가볍게 넘어갑니다.
+COPY requirements.txt .
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch \
+    torchvision \
+    pydantic-settings  
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 6. 소스 코드 복사
+COPY . .
+
+# 7. 환경 변수 설정
+ENV PYTHONPATH=/app:/app/apps/chatbot_api
+EXPOSE 8000
+
+# 8. 실행 명령
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
