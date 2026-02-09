@@ -1,3 +1,6 @@
+# AI/apps/out_risk_api/app/ui/streamlit_app.py
+
+# 20260203 이종헌 수정: ESG 외부 이슈 모니터링 UI(배치 detect/preview) 주석 보강
 from __future__ import annotations
 
 import json
@@ -18,6 +21,7 @@ else:
     HttpxClient = Any
 
 
+# 20260131 이종헌 신규: ESG 외부 이슈 모니터링 화면 기본 설정
 def esg_setup_page() -> None:
     st.set_page_config(
         page_title="ESG 외부 이슈 모니터링(참고용)",
@@ -25,11 +29,13 @@ def esg_setup_page() -> None:
     )
 
 
+# 20260131 이종헌 신규: 마크다운 테이블 렌더링용 문자열 이스케이프
 def esg_escape_md(v: object) -> str:
     s = "" if v is None else str(v)
     return s.replace("|", "\\|").replace("\n", " ")
 
 
+# 20260203 이종헌 수정: pyarrow 이슈 대응용 markdown table fallback
 def esg_to_md_table(rows: List[Dict[str, Any]], max_rows: int = 50) -> str:
     if not rows:
         return "표시할 데이터가 없습니다."
@@ -46,16 +52,19 @@ def esg_to_md_table(rows: List[Dict[str, Any]], max_rows: int = 50) -> str:
     return "\n".join([header, sep] + body)
 
 
+# 20260203 이종헌 수정: 테이블 렌더링 경로를 markdown fallback 중심으로 통일
 def esg_render_table(rows: List[Dict[str, Any]], max_rows: int = 50) -> None:
     st.markdown(esg_to_md_table(rows, max_rows=max_rows))
 
 
+# 20260203 이종헌 수정: httpx 미설치/불가 환경 안내 처리
 def esg_notice_httpx() -> None:
     if not _HTTPX_OK:
         st.error("httpx가 설치되어 있지 않습니다. `pip install httpx` 후 다시 실행하세요.")
         st.stop()
 
 
+# 20260131 이종헌 신규: vendors JSON 입력 파싱 및 검증
 def esg_parse_vendors_json(raw: str) -> Tuple[List[Dict[str, str]], Optional[str]]:
     if not (raw or "").strip():
         return [], "vendors JSON이 비어있습니다."
@@ -89,6 +98,7 @@ def esg_parse_vendors_json(raw: str) -> Tuple[List[Dict[str, str]], Optional[str
     return out, None
 
 
+# 20260203 이종헌 수정: 배치 detect 요청 payload(vendors, rag.enabled) 생성
 def esg_build_batch_detect_payload(
     vendors: List[Dict[str, str]],
     rag_enabled: bool,
@@ -100,6 +110,7 @@ def esg_build_batch_detect_payload(
     }
 
 
+# 20260201 이종헌 수정: search preview 요청 payload 구성
 def esg_build_preview_payload(
     vendor_name: str,
     rag_enabled: bool,
@@ -110,12 +121,14 @@ def esg_build_preview_payload(
     }
 
 
+# 20260131 이종헌 신규: 공통 POST JSON 호출 래퍼
 def esg_httpx_post_json(client: HttpxClient, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     r = client.post(url, json=payload)
     r.raise_for_status()
     return r.json()
 
 
+# 20260203 이종헌 수정: detect batch API 호출(타임아웃 포함)
 def esg_call_detect_batch(api_base: str, payload: Dict[str, Any], timeout_s: float = 60.0) -> Dict[str, Any]:
     esg_notice_httpx()
     url = api_base.rstrip("/") + "/risk/external/detect"
@@ -124,6 +137,7 @@ def esg_call_detect_batch(api_base: str, payload: Dict[str, Any], timeout_s: flo
         return esg_httpx_post_json(client, url, payload)
 
 
+# 20260201 이종헌 수정: preview API 호출(404/오류 메시지 분리)
 def esg_call_search_preview(api_base: str, payload: Dict[str, Any], timeout_s: float = 20.0) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     esg_notice_httpx()
     url = api_base.rstrip("/") + "/risk/external/search/preview"
@@ -138,6 +152,7 @@ def esg_call_search_preview(api_base: str, payload: Dict[str, Any], timeout_s: f
         return None, f"search preview 호출 실패: {e}"
 
 
+# 20260131 이종헌 신규: 위험도 정렬 우선순위 매핑
 def esg_level_rank(level: str) -> int:
     if level == "HIGH":
         return 2
@@ -146,10 +161,12 @@ def esg_level_rank(level: str) -> int:
     return 0
 
 
+# 20260131 이종헌 신규: 리스트 정렬키(level 우선, score 차순)
 def esg_sort_key(row: Dict[str, Any]) -> Tuple[int, float]:
     return (esg_level_rank(str(row.get("external_risk_level", "LOW"))), float(row.get("total_score", 0) or 0))
 
 
+# 20260203 이종헌 수정: 결과 리스트용 3줄 사유 요약 생성
 def esg_reason_3lines_from_vendor_result(vr: Dict[str, Any]) -> str:
     lines = vr.get("reason_3lines") or []
     if not isinstance(lines, list) or not lines:
@@ -157,6 +174,7 @@ def esg_reason_3lines_from_vendor_result(vr: Dict[str, Any]) -> str:
     return "\n".join([f"- {str(x)}" for x in lines[:3]])
 
 
+# 20260131 이종헌 신규: 선택 벤더 상세 패널 렌더링
 def esg_render_vendor_detail(vr: Dict[str, Any]) -> None:
     st.subheader("협력사 상세(참고용)")
 
@@ -199,6 +217,7 @@ def esg_render_vendor_detail(vr: Dict[str, Any]) -> None:
     esg_render_table(rows, max_rows=10)
 
 
+# 20260201 이종헌 수정: preview 문서 목록 렌더링(수집 품질 디버깅)
 def esg_render_preview_docs(preview: Dict[str, Any], vendor_name: str) -> None:
     st.markdown(f"### 검색 미리보기(문서 확인) - {vendor_name}")
     docs = preview.get("documents")
@@ -222,6 +241,7 @@ def esg_render_preview_docs(preview: Dict[str, Any], vendor_name: str) -> None:
     esg_render_table(rows, max_rows=20)
 
 
+# 20260203 이종헌 수정: ESG 모니터링 화면 전체 렌더 오케스트레이션, detect API 호출 및 결과 정렬/상세 렌더링 진입점
 def esg_render() -> None:
     st.title("ESG 외부 이슈 모니터링(참고용)")
     st.caption("협력사 외부 이슈 신호를 참고용으로 요약/정렬해 보여줍니다. (메인 판정 변경 없음)")
@@ -356,6 +376,7 @@ def esg_render() -> None:
             esg_render_vendor_detail(picked)
 
 
+# 20260131 이종헌 신규: streamlit 실행 엔트리 포인트
 def esg_main() -> None:
     esg_setup_page()
     esg_render()

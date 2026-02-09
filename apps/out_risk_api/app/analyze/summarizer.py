@@ -1,3 +1,6 @@
+# AI/apps/out_risk_api/app/analyze/summarizer.py
+
+# 20260203 이종헌 수정: reason 요약/why 생성 및 LLM fallback 규칙 주석 보강
 from __future__ import annotations
 import os
 import re
@@ -16,19 +19,23 @@ except Exception:
     _LC_AVAILABLE = False
 
 @dataclass
+# 20260131 이종헌 신규: 요약 결과 스키마(summary/why/추정여부) 컨테이너
 class esg_SummaryResult:
     summary_ko: str
     why: str
     is_estimated: bool
 
+# 20260203 이종헌 수정: 근거 본문 길이 기반 추정 판정 보조, 근거 부족 판단 시 추정(prefix) 처리
 def esg_is_evidence_weak(text: str) -> bool:
     return len((text or "").strip()) < 40
 
+# 20260203 이종헌 수정: strict_grounding 시 추정 문구 prefix 강제
 def esg_prefix_if_needed(strict: bool, is_estimated: bool, text: str) -> str:
     if strict and is_estimated and not (text or "").startswith("추정"):
         return "추정: " + (text or "")
     return text or ""
 
+# 20260203 이종헌 수정: LLM 요약 실패 시 규칙 기반 문구로 안전 fallback
 def esg_summarize_and_why(
     text: str,
     category: Category,

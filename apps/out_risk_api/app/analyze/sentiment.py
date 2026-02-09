@@ -1,3 +1,6 @@
+# AI/apps/out_risk_api/app/analyze/sentiment.py
+
+# 20260202 이종헌 수정: 긍/부정 분리(negative-only scoring) 규칙 주석 보강
 from __future__ import annotations
 
 from typing import List, Tuple
@@ -5,6 +8,7 @@ from typing import List, Tuple
 from app.schemas.risk import DocItem
 
 
+# 20260202 이종헌 신규: 부정 강키워드 사전 정의(negative-only scoring 기준)
 def _esg_negative_strong_keywords() -> List[str]:
     """부정 강도 높은 키워드(무조건 리스크로 분류)."""
     return [
@@ -28,6 +32,7 @@ def _esg_negative_strong_keywords() -> List[str]:
     ]
 
 
+# 20260202 이종헌 신규: 긍정/개선 키워드 사전 정의(리스크 점수 제외 기준)
 def _esg_positive_keywords() -> List[str]:
     return [
         # 긍정/개선/투자
@@ -40,6 +45,7 @@ def _esg_positive_keywords() -> List[str]:
     ]
 
 
+# 20260202 이종헌 수정: 점수 반영 대상은 negative_docs만 남기도록 분리
 def esg_split_docs_by_sentiment(docs: List[DocItem]) -> Tuple[List[DocItem], List[DocItem]]:
     """
     Rule-based polarity split.

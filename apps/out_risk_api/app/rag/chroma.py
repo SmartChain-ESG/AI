@@ -1,4 +1,6 @@
 # AI/apps/out_risk_api/app/rag/chroma.py
+
+# 20260203 이종헌 수정: Chroma RAG 준비상태/업서트/리트리브 주석 보강
 from __future__ import annotations
 
 import logging
@@ -9,9 +11,8 @@ from app.rag.chunking import esg_chunk_documents
 
 logger = logging.getLogger("esg_rag")
 
-# =========================
+
 # 1. 라이브러리 가용성 체크 (Import Isolation)
-# =========================
 _LC_IMPORT_ERROR = ""
 try:
     from langchain_chroma import Chroma
@@ -26,9 +27,8 @@ except Exception as e:
     _LC_IMPORT_ERROR = str(e)
 
 
-# =========================
 # 2. RAG 핵심 클래스
-# =========================
+# 20260131 이종헌 신규: Chroma 기반 외부문서 임시 코퍼스 RAG 래퍼
 class esg_ChromaRag:
     def __init__(self, persist_dir: str, collection: str) -> None:
         self.persist_dir = persist_dir
@@ -68,6 +68,7 @@ class esg_ChromaRag:
         except Exception:
             return False
 
+# 20260203 이종헌 수정: lazy init + readiness check 기반으로 RAG 안전 실행
     def esg_get_store(self) -> Any:
         """벡터스토어 인스턴스 지연 로딩 (Lazy Loading)"""
         if self._vs is not None:
@@ -91,6 +92,7 @@ class esg_ChromaRag:
             logger.error(f"Chroma Store 초기화 실패: {e}")
             return None
 
+# 20260203 이종헌 수정: 문서 청크를 벡터DB에 저장하는 업서트 경로
     def esg_upsert(self, docs: List[Dict[str, Any]], chunk_size: int = 0) -> int:
         """
         문서 리스트를 청킹하여 벡터 DB에 추가
@@ -128,6 +130,7 @@ class esg_ChromaRag:
             logger.error(f"Chroma Upsert 에러: {e}")
             return 0
 
+# 20260203 이종헌 수정: query 기반 top_k 검색 결과 반환
     def esg_retrieve(self, query: str, top_k: int = 0) -> List[Dict[str, Any]]:
         """유사도 검색 수행"""
         if not self.esg_ready():
@@ -158,9 +161,8 @@ class esg_ChromaRag:
             return []
 
 
-# =========================
 # 3. 인스턴스 팩토리 함수
-# =========================
+# 20260203 이종헌 수정: 전역 RAG 인스턴스 지연 초기화/재사용 진입점
 def esg_get_rag() -> esg_ChromaRag:
     """RAG 객체 싱글톤/팩토리 획득"""
     return esg_ChromaRag(

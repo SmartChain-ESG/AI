@@ -1,3 +1,5 @@
+# AI/apps/out_risk_api/app/pipeline/detect.py
+
 from __future__ import annotations
 
 import asyncio
@@ -28,6 +30,7 @@ from app.core import config as app_config
 logger = logging.getLogger("out_risk.detect")
 
 
+# 20260201 이종헌 신규: preview 단계에서 검색 문서 개요를 반환하는 엔트리
 async def esg_search_preview(req: SearchPreviewRequest) -> SearchPreviewResponse:
     docs: List[DocItem] = await esg_search_documents(req)
     return SearchPreviewResponse(
@@ -38,7 +41,9 @@ async def esg_search_preview(req: SearchPreviewRequest) -> SearchPreviewResponse
     )
 
 
+# 20260203 이종헌 수정: 벤더 배치 실행/세마포어/타임아웃 제어 오케스트레이션
 async def esg_detect_external_risk_batch(req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectBatchResponse:
+    # 20260203 이종헌 수정: 배치 실행 시 vendor 단위 wait_for timeout으로 hang 방지
     esg_per_vendor_timeout_sec = 6.0
     sem = asyncio.Semaphore(2)
 
@@ -68,6 +73,7 @@ async def esg_detect_external_risk_batch(req: ExternalRiskDetectBatchRequest) ->
     return ExternalRiskDetectBatchResponse(results=results)
 
 
+# 20260203 이종헌 수정: 단일 벤더 기준 검색→RAG(옵션)→감성분리→점수화 파이프라인
 async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectVendorResult:
     docs: List[DocItem] = await esg_search_documents(_esg_build_search_req(vendor, req))
     docs_used = docs
@@ -121,6 +127,7 @@ async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatch
     docs_for_score = negative_docs
 
     reason_3lines = _esg_make_reason_3lines(vendor, docs_for_score, non_negative_docs)
+    # 20260203 이종헌 수정: reason_1line LLM 호출 로그(start/success/fail)로 가시성 확보
     reason_1line = await _esg_make_reason_1line(vendor, docs_for_score)
     total_score = _esg_calc_total_score(docs_for_score)
     level = _esg_level_from_score(total_score)
@@ -136,10 +143,12 @@ async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatch
     )
 
 
+# 20260201 이종헌 신규: 벤더 단위 SearchPreviewRequest 빌더
 def _esg_build_search_req(vendor: str, req: ExternalRiskDetectBatchRequest) -> SearchPreviewRequest:
     return SearchPreviewRequest(vendor=vendor, rag=req.rag)
 
 
+# 20260203 이종헌 수정: docs/non_negative 집계 기반 3줄 사유 생성
 def _esg_make_reason_3lines(vendor: str, docs: List[DocItem], non_negative: List[DocItem]) -> List[str]:
     if not docs:
         return [
@@ -155,6 +164,7 @@ def _esg_make_reason_3lines(vendor: str, docs: List[DocItem], non_negative: List
     ]
 
 
+# 20260203 이종헌 수정: 제목 기반 1줄 요약(LLM 우선, 실패 시 fallback)
 async def _esg_make_reason_1line(vendor: str, docs: List[DocItem]) -> str:
     if not docs:
         return f"{vendor} 관련 외부 이슈 문서가 확인되지 않았습니다."
@@ -189,6 +199,7 @@ async def _esg_make_reason_1line(vendor: str, docs: List[DocItem]) -> str:
     return f"{vendor} 관련 기사 {len(docs)}건 감지 (최근: {titles[0] if titles else 'N/A'})"
 
 
+# 20260201 이종헌 신규: published_at 문자열을 datetime으로 안전 파싱
 def _parse_date(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
@@ -203,6 +214,7 @@ def _parse_date(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
+# 20260201 이종헌 신규: 날짜 신선도 가중치 계산(30/90/180일)
 def _age_weight(published_at: Optional[str]) -> float:
     dt = _parse_date(published_at)
     if not dt:
@@ -220,6 +232,7 @@ def _age_weight(published_at: Optional[str]) -> float:
     return 0.4
 
 
+# 20260201 이종헌 신규: 문서별 가중치 합산 후 총점(상한 10) 계산
 def _esg_calc_total_score(docs: List[DocItem]) -> float:
     if not docs:
         return 0.0
@@ -229,6 +242,7 @@ def _esg_calc_total_score(docs: List[DocItem]) -> float:
     return min(10.0, round(score, 2))
 
 
+# 20260201 이종헌 신규: 총점을 LOW/MEDIUM/HIGH risk level로 변환
 def _esg_level_from_score(score: float) -> RiskLevel:
     if score >= 10.0:
         return RiskLevel.HIGH

@@ -1,3 +1,6 @@
+# AI/apps/out_risk_api/app/search/provider.py
+
+# 20260202 이종헌 수정: GDELT 우선 + RSS fallback 검색 파이프라인 주석 보강
 from __future__ import annotations
 
 import asyncio
@@ -16,6 +19,7 @@ logger = logging.getLogger("out_risk")
 GDELT_DOC_API = "https://api.gdeltproject.org/api/v2/doc/doc"
 
 
+# 20260201 이종헌 수정: 회사명/별칭 기반 GDELT 쿼리 문자열 생성
 def _build_gdelt_query(terms: List[str]) -> str:
     quoted = [f"\"{t}\"" for t in terms if t]
     if not quoted:
@@ -25,6 +29,7 @@ def _build_gdelt_query(terms: List[str]) -> str:
     return "(" + " OR ".join(quoted) + ")"
 
 
+# 20260201 이종헌 수정: GDELT Doc API URL 생성(maxrecords 포함)
 def _build_gdelt_url(query: str, max_records: int = 20) -> str:
     params = {
         "query": query,
@@ -36,6 +41,7 @@ def _build_gdelt_url(query: str, max_records: int = 20) -> str:
     return str(httpx.URL(GDELT_DOC_API, params=params))
 
 
+# 20260202 이종헌 수정: ESG 관련 키워드 필터(노이즈 제거)
 def _esg_keywords() -> List[str]:
     return [
         # Safety / Labor
@@ -70,6 +76,7 @@ def _esg_keywords() -> List[str]:
     ]
 
 
+# 20260202 이종헌 수정: 회사명/키워드 완화 필터로 문서 후보 정제
 def _esg_filter_docs_relaxed(docs: List[DocItem], terms: List[str]) -> List[DocItem]:
     if not docs:
         return []
@@ -86,6 +93,7 @@ def _esg_filter_docs_relaxed(docs: List[DocItem], terms: List[str]) -> List[DocI
     return kept
 
 
+# 20260203 이종헌 수정: non-json/JSON decode 실패를 분기해 search 멈춤 대신 빈 결과로 복구
 async def esg_search_gdelt(req: SearchPreviewRequest) -> List[DocItem]:
     esg_timeout = httpx.Timeout(3.0, connect=2.0)
 
@@ -125,6 +133,7 @@ async def esg_search_gdelt(req: SearchPreviewRequest) -> List[DocItem]:
         return []
 
 
+# 20260202 이종헌 수정: GDELT 응답을 DocItem 공통 포맷으로 파싱 + dedup
 def _esg_parse_gdelt_to_docs(data: Dict[str, Any]) -> List[DocItem]:
     items = data.get("articles") or data.get("data") or data.get("results") or []
     docs: List[DocItem] = []
@@ -161,6 +170,8 @@ def _esg_parse_gdelt_to_docs(data: Dict[str, Any]) -> List[DocItem]:
     return uniq
 
 
+# 20260202 이종헌 수정: GDELT 우선 + RSS fallback 통합 검색 오케스트레이션, GDELT 실패 시 RSS fallback으로 문서 수집
+# 20260203 이종헌 수정: GDELT/RSS 단계별 wait_for timeout 적용으로 전체 응답 지연 방지
 async def esg_search_documents(req: SearchPreviewRequest) -> List[DocItem]:
     try:
         docs = await asyncio.wait_for(esg_search_gdelt(req), timeout=3.5)

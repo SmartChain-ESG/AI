@@ -1,3 +1,6 @@
+# AI/apps/out_risk_api/app/search/rss.py
+
+# 20260202 이종헌 수정: Google News RSS 수집/필터/중복제거 주석 보강
 from __future__ import annotations
 
 import hashlib
@@ -16,10 +19,12 @@ from app.search.aliases import esg_expand_company_terms
 logger = logging.getLogger("out_risk.search")
 
 
+# 20260201 이종헌 수정: URL/제목 기반 안정적 doc_id 해시 생성
 def esg_hash_id(value: str) -> str:
     return hashlib.sha256((value or "").encode("utf-8")).hexdigest()[:16]
 
 
+# 20260201 이종헌 수정: RSS pubDate를 YYYY-MM-DD로 표준화
 def esg_safe_ymd(pub_text: str) -> str:
     s = (pub_text or "").strip()
     if not s:
@@ -35,6 +40,7 @@ def esg_safe_ymd(pub_text: str) -> str:
             return ""
 
 
+# 20260202 이종헌 수정: RSS 검색 결과 ESG 키워드 필터
 def _esg_keywords() -> List[str]:
     return [
         "사고", "산재", "산업재해", "중대재해", "중대재해처벌법", "사망", "부상",
@@ -62,6 +68,7 @@ def _esg_keywords() -> List[str]:
     ]
 
 
+# 20260202 이종헌 수정: RSS 문서에 완화 필터/중복 제거 적용
 def _esg_filter_docs_relaxed(docs: List[DocItem]) -> List[DocItem]:
     if not docs:
         return []
@@ -74,6 +81,7 @@ def _esg_filter_docs_relaxed(docs: List[DocItem]) -> List[DocItem]:
     return kept
 
 
+# 20260202 이종헌 수정: vendor+alias 기반 RSS 검색 후 DocItem 반환
 def esg_search_rss(req: SearchPreviewRequest) -> List[DocItem]:
     """
     RSS 검색(완화 모드):

@@ -16,6 +16,7 @@ from app.core import config as app_config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("out_risk.main")
 
+# 20260203 이종헌 수정: UTF-8 고정 JSON 응답 클래스(한글 깨짐 방지)
 class UTF8JSONResponse(JSONResponse):
     media_type = "application/json; charset=utf-8"
 
@@ -23,6 +24,7 @@ class UTF8JSONResponse(JSONResponse):
         return json.dumps(content, ensure_ascii=False, allow_nan=False).encode("utf-8")
 
 
+# 20260203 이종헌 수정: health/env 확인 기준을 app.core.config로 통일해 실행 위치 의존성 완화
 def esg_create_app() -> FastAPI:
     app = FastAPI(
         title="out_risk_api",
@@ -49,8 +51,8 @@ def esg_create_app() -> FastAPI:
     app.include_router(risk_router, tags=["risk"])
 
     @app.get("/health")
+    # 20260203 이종헌 수정: OPENAI_API_KEY 로드 상태를 헬스체크로 직접 노출
     def esg_health() -> dict:
-        # Importing app_config triggers .env load there
         api_key_loaded = bool(app_config.OPENAI_API_KEY)
         return {
             "ok": True,

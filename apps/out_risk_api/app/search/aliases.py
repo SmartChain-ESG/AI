@@ -1,3 +1,5 @@
+# AI/apps/out_risk_api/app/search/aliases.py
+
 from __future__ import annotations
 
 # 협력사명 별칭(alias) 테이블
@@ -10,6 +12,7 @@ esg_COMPANY_ALIASES = {
 
 
 # 회사명으로 검색어 후보를 만든다 (회사명 + alias)
+# 20260202 이종헌 수정: 회사명 기준 별칭 확장으로 검색 recall 보강
 def esg_expand_company_terms(company_name: str) -> list[str]:
     base = (company_name or "").strip()
     if not base:
