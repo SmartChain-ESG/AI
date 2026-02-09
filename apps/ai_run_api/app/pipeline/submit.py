@@ -359,16 +359,8 @@ async def _final_aggregate(
     elif "NEED_CLARIFY" in verdicts:
         # 2) NEED_FIX 없고 NEED_CLARIFY 있음
         overall_verdict = "NEED_CLARIFY"
-        # ESG 도메인만 NEED_CLARIFY → LOW (모니터링 대상)
-        clarify_domains = {
-            sr.slot_name.split(".")[0]
-            for sr in slot_results if sr.verdict == "NEED_CLARIFY"
-        }
-        if clarify_domains <= {"esg"}:
-            risk_level = "LOW"
-        else:
-            # Safety 또는 Compliance NEED_CLARIFY → MEDIUM
-            risk_level = "MEDIUM"
+        # 도메인 구분 없이 소명 필요 사항이 있으면 MEDIUM으로 통일 (일관성 확보)
+        risk_level = "MEDIUM"
     else:
         # 3) 모두 PASS → LOW
         overall_verdict = "PASS"
@@ -389,19 +381,12 @@ async def _final_aggregate(
         summary_lines.append(line)
     judge_input = "\n".join(summary_lines)
 
-    _RISK_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
     try:
         raw = await ask_llm(get_prompt(JUDGE_FINAL, domain), judge_input, heavy=True)
         llm_result = _safe_json(raw)
         why = llm_result.get("why", "")
-        # LLM은 완화만 허용, 규칙보다 엄격하게 올리지 않음
-        llm_risk = llm_result.get("risk_level", risk_level)
-        if _RISK_ORDER.get(llm_risk, 0) <= _RISK_ORDER[risk_level]:
-            risk_level = llm_risk
-        llm_verdict = llm_result.get("verdict", overall_verdict)
-        _VERDICT_ORDER = {"PASS": 0, "NEED_CLARIFY": 1, "NEED_FIX": 2}
-        if _VERDICT_ORDER.get(llm_verdict, 0) <= _VERDICT_ORDER[overall_verdict]:
-            overall_verdict = llm_verdict
+        
+        # LLM은 오직 상세 사유(why) 작성과 추가 정보(extras) 추출에만 집중 (판정 변경 불가)
         extras = {k: str(v) for k, v in llm_result.get("extras", {}).items()}
     except Exception:
         if risk_level == "HIGH":
