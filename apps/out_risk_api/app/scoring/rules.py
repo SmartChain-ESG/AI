@@ -9,7 +9,7 @@ from typing import Optional
 from app.schemas.risk import RiskLevel
 
 
-# 20260131 이종헌 신규: YYYY-MM-DD 문자열 날짜 파싱 유틸
+# 20260211 이종헌 수정: ISO/Z 형식까지 파싱하도록 확장
 def esg_parse_date_ymd(s: str) -> Optional[datetime]:
     value = (s or "").strip()
     if not value:
@@ -25,7 +25,7 @@ def esg_parse_date_ymd(s: str) -> Optional[datetime]:
             return None
 
 
-# 20260203 이종헌 수정: 최근성 가중치(30/90/180일) 계산 규칙
+# 20260211 이종헌 수정: naive datetime UTC 보정 및 기본 가중치 정합화
 def esg_recency_weight(published_at: str) -> float:
     dt = esg_parse_date_ymd(published_at)
     if not dt:
@@ -45,7 +45,7 @@ def esg_recency_weight(published_at: str) -> float:
     return 0.4
 
 
-# 20260203 이종헌 수정: total_score를 LOW/MEDIUM/HIGH로 매핑
+# 20260211 이종헌 수정: RiskLevel Enum 반환으로 타입 정합성 강화
 def esg_level_from_total(total_score: float) -> RiskLevel:
     if total_score >= 10:
         return RiskLevel.HIGH

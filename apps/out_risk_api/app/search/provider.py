@@ -170,8 +170,7 @@ def _esg_parse_gdelt_to_docs(data: Dict[str, Any]) -> List[DocItem]:
     return uniq
 
 
-# 20260202 이종헌 수정: GDELT 우선 + RSS fallback 통합 검색 오케스트레이션, GDELT 실패 시 RSS fallback으로 문서 수집
-# 20260203 이종헌 수정: GDELT/RSS 단계별 wait_for timeout 적용으로 전체 응답 지연 방지
+# 20260211 이종헌 수정: GDELT/RSS 동시 수행 후 GDELT 우선 선택으로 지연 누적 완화
 async def esg_search_documents(req: SearchPreviewRequest) -> List[DocItem]:
     async def _gdelt_safe() -> List[DocItem]:
         try:

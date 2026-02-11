@@ -25,6 +25,7 @@ from app.core import config as app_config
 logger = logging.getLogger("out_risk.detect")
 
 
+# 20260201 이종헌 신규: preview 단계에서 검색 문서 개요 반환
 async def esg_search_preview(req: SearchPreviewRequest) -> SearchPreviewResponse:
     docs: List[DocItem] = await esg_search_documents(req)
     return SearchPreviewResponse(
@@ -35,6 +36,7 @@ async def esg_search_preview(req: SearchPreviewRequest) -> SearchPreviewResponse
     )
 
 
+# 20260211 이종헌 수정: 벤더 배치 타임아웃/병렬도 조정 및 단건 예외 격리
 async def esg_detect_external_risk_batch(req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectBatchResponse:
     esg_per_vendor_timeout_sec = 12.0
     max_parallel = min(4, max(2, len(req.vendors)))
@@ -81,6 +83,7 @@ async def esg_detect_external_risk_batch(req: ExternalRiskDetectBatchRequest) ->
     return ExternalRiskDetectBatchResponse(results=results)
 
 
+# 20260203 이종헌 수정: 단일 벤더 검색→RAG(옵션)→감정분리→점수화 파이프라인
 async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectVendorResult:
     docs: List[DocItem] = await esg_search_documents(_esg_build_search_req(vendor, req))
     docs_used = docs
@@ -150,10 +153,12 @@ async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatch
     )
 
 
+# 20260201 이종헌 신규: 벤더 단위 SearchPreviewRequest 빌더
 def _esg_build_search_req(vendor: str, req: ExternalRiskDetectBatchRequest) -> SearchPreviewRequest:
     return SearchPreviewRequest(vendor=vendor, rag=req.rag)
 
 
+# 20260211 이종헌 수정: 3줄 사유에 분류 정보(classifier) 포함
 def _esg_make_reason_3lines(vendor: str, docs: List[DocItem], non_negative: List[DocItem]) -> List[str]:
     if not docs:
         return [
@@ -176,6 +181,7 @@ def _esg_make_reason_3lines(vendor: str, docs: List[DocItem], non_negative: List
     ]
 
 
+# 20260211 이종헌 수정: reason_1line 생성 경로를 summarizer 재사용으로 통일
 async def _esg_make_reason_1line(vendor: str, docs: List[DocItem]) -> str:
     if not docs:
         return f"{vendor} 관련 외부 이슈 문서가 확인되지 않았습니다."
@@ -208,10 +214,12 @@ async def _esg_make_reason_1line(vendor: str, docs: List[DocItem]) -> str:
     return f"{vendor} 관련 기사 {len(docs)}건 감지 (최근: {titles[0] if titles else 'N/A'})"
 
 
+# 20260211 이종헌 수정: 최근성 가중치 계산을 scoring.rules로 위임
 def _age_weight(published_at: Optional[str]) -> float:
     return esg_recency_weight((published_at or "").strip())
 
 
+# 20260201 이종헌 신규: 문서별 가중치 합산 후 총점(상한 10) 계산
 def _esg_calc_total_score(docs: List[DocItem]) -> float:
     if not docs:
         return 0.0
@@ -221,5 +229,6 @@ def _esg_calc_total_score(docs: List[DocItem]) -> float:
     return min(10.0, round(score, 2))
 
 
+# 20260211 이종헌 수정: 점수→등급 매핑을 scoring.rules로 위임
 def _esg_level_from_score(score: float) -> RiskLevel:
     return esg_level_from_total(score)

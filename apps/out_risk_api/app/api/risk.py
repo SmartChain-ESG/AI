@@ -19,6 +19,7 @@ from app.schemas.risk import (
 router = APIRouter(prefix="/risk", tags=["risk"])
 
 
+# 20260211 이종헌 수정: detect API 타임아웃 확장 및 표준 에러 포맷 적용
 @router.post("/external/detect", response_model=ExternalRiskDetectBatchResponse)
 async def esg_api_external_detect(req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectBatchResponse:
     try:
@@ -35,6 +36,7 @@ async def esg_api_external_detect(req: ExternalRiskDetectBatchRequest) -> Extern
         )
 
 
+# 20260211 이종헌 수정: search preview API 표준 에러 포맷 적용
 @router.post("/external/search/preview", response_model=SearchPreviewResponse)
 async def esg_api_external_search_preview(req: SearchPreviewRequest) -> SearchPreviewResponse:
     try:
@@ -51,6 +53,7 @@ async def esg_api_external_search_preview(req: SearchPreviewRequest) -> SearchPr
         )
 
 
+# 20260201 이종헌 신규: Chroma heartbeat 동기 호출 헬퍼
 def _chroma_heartbeat_sync() -> dict:
     import chromadb
 
@@ -59,6 +62,7 @@ def _chroma_heartbeat_sync() -> dict:
     return {"status": "ok", "heartbeat": heartbeat}
 
 
+# 20260211 이종헌 수정: heartbeat API 표준 에러 포맷 적용
 @router.get("/external/heartbeat")
 async def chroma_heartbeat() -> dict:
     try:

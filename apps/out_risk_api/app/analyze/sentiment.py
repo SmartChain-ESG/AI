@@ -7,6 +7,7 @@ from typing import List, Tuple
 from app.schemas.risk import DocItem
 
 
+# 20260211 이종헌 수정: 부정 강키워드 사전 재정의(오탐 완화용 규칙과 분리)
 def _esg_negative_strong_keywords() -> List[str]:
     return [
         # safety / environment
@@ -27,6 +28,7 @@ def _esg_negative_strong_keywords() -> List[str]:
     ]
 
 
+# 20260211 이종헌 수정: 하드 부정 키워드 분리(긍정 문맥 동시 존재 시에도 리스크 유지)
 def _esg_hard_negative_keywords() -> List[str]:
     # Hard negatives always stay in risk even if positive words co-exist.
     return [
@@ -35,6 +37,7 @@ def _esg_hard_negative_keywords() -> List[str]:
     ]
 
 
+# 20260211 이종헌 수정: 긍정 override 키워드 추가(장학/기부 기사 오탐 완화)
 def _esg_positive_override_keywords() -> List[str]:
     # Explicit positive/social-contribution context for false-positive reduction.
     return [
@@ -43,6 +46,7 @@ def _esg_positive_override_keywords() -> List[str]:
     ]
 
 
+# 20260211 이종헌 수정: 감정 분리 우선순위 재설계(hard negative > negative > non-negative)
 def esg_split_docs_by_sentiment(docs: List[DocItem]) -> Tuple[List[DocItem], List[DocItem]]:
     if not docs:
         return [], []

@@ -1,10 +1,11 @@
 # AI/apps/out_risk_api/app/analyze/summarizer.py
 
+# 20260203 이종헌 수정: reason 요약/why 생성 및 LLM fallback 규칙 주석 보강
 from __future__ import annotations
 
+import logging
 import os
 import re
-import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -19,6 +20,7 @@ except Exception:
     _LC_AVAILABLE = False
 
 
+# 20260211 이종헌 수정: 요약 결과 컨테이너 유지(파이프라인 공통 재사용)
 @dataclass
 class esg_SummaryResult:
     summary_ko: str
@@ -26,16 +28,19 @@ class esg_SummaryResult:
     is_estimated: bool
 
 
+# 20260203 이종헌 수정: 근거 본문 길이 기반 추정 판정 보조
 def esg_is_evidence_weak(text: str) -> bool:
     return len((text or "").strip()) < 40
 
 
+# 20260203 이종헌 수정: strict_grounding 시 추정 문구 prefix 강제
 def esg_prefix_if_needed(strict: bool, is_estimated: bool, text: str) -> str:
     if strict and is_estimated and not (text or "").startswith("추정"):
         return "추정: " + (text or "")
     return text or ""
 
 
+# 20260211 이종헌 수정: category 타입을 문자열로 정리하고 프롬프트/파싱 안정화
 def esg_summarize_and_why(
     text: str,
     category: str,

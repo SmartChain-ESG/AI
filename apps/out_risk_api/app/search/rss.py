@@ -15,6 +15,8 @@ import httpx
 
 from app.schemas.risk import DocItem, SearchPreviewRequest
 from app.search.aliases import esg_expand_company_terms
+
+# 20260211 이종헌 수정: 고정 RSS 피드 병합 수집 연결
 from app.search.rss_sources import RSS_FEEDS
 
 logger = logging.getLogger("out_risk.search")
@@ -82,7 +84,7 @@ def _esg_filter_docs_relaxed(docs: List[DocItem]) -> List[DocItem]:
     return kept
 
 
-# 20260202 이종헌 수정: vendor+alias 기반 RSS 검색 후 DocItem 반환
+# 20260211 이종헌 수정: 검색 RSS + 고정 RSS 소스 병합 및 최대 feed 수 상향
 def esg_search_rss(req: SearchPreviewRequest) -> List[DocItem]:
     """
     RSS 검색(완화 모드):
