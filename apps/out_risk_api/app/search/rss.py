@@ -15,6 +15,7 @@ import httpx
 
 from app.schemas.risk import DocItem, SearchPreviewRequest
 from app.search.aliases import esg_expand_company_terms
+from app.search.rss_sources import RSS_FEEDS
 
 logger = logging.getLogger("out_risk.search")
 
@@ -95,10 +96,19 @@ def esg_search_rss(req: SearchPreviewRequest) -> List[DocItem]:
             return []
         terms = esg_expand_company_terms(base_q) or [base_q]
         terms = terms[:2]
-        return [
+        search_feeds = [
             f"https://news.google.com/rss/search?q={quote_plus(t)}&hl=ko&gl=KR&ceid=KR:ko"
             for t in terms
         ]
+        merged: list[str] = []
+        seen: set[str] = set()
+        for feed in search_feeds + list(RSS_FEEDS):
+            f = (feed or "").strip()
+            if not f or f in seen:
+                continue
+            seen.add(f)
+            merged.append(f)
+        return merged
 
     logger.info("RSS search start vendor=%s", req.vendor)
     feeds = esg_build_rss_search_feeds(req)
@@ -108,7 +118,7 @@ def esg_search_rss(req: SearchPreviewRequest) -> List[DocItem]:
     items: List[DocItem] = []
     seen_url = set()
     max_total = 20
-    max_feeds = min(2, len(feeds))
+    max_feeds = min(4, len(feeds))
 
     timeout = httpx.Timeout(connect=1.0, read=1.2, write=1.0, pool=1.0)
 

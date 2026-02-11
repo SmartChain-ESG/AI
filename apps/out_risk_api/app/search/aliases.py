@@ -4,10 +4,11 @@ from __future__ import annotations
 
 # 협력사명 별칭(alias) 테이블
 esg_COMPANY_ALIASES = {
-    "SK하이닉스": ["SK Hynix", "에스케이하이닉스", "하이닉스", "Hynix"],
-    "SK이노베이션": ["SK Innovation", "에스케이이노베이션", "SK이노"],
-    "삼성SDI": ["Samsung SDI", "삼성 SDI"],
-    "LG디스플레이": ["LG Display", "엘지디스플레이", "LG 디스플레이"],
+    "포스코홀딩스": ["POSCO Holdings", "POSCO홀딩스", "포스코 홀딩스", "POSCO"],
+    "현대제철": ["Hyundai Steel", "현대 제철", "HSC", "HYUNDAI STEEL"],
+    "성광벤드": ["SUNGKWANG BEND", "SungKwang Bend", "성광 벤드"],
+    "동국제강": ["Dongkuk Steel", "동국 제강", "DKC"],
+    "HD현대일렉트릭": ["HD Hyundai Electric", "현대일렉트릭", "HD현대 일렉트릭"],
 }
 
 

@@ -1,51 +1,52 @@
 # AI/apps/out_risk_api/app/analyze/summarizer.py
 
-# 20260203 이종헌 수정: reason 요약/why 생성 및 LLM fallback 규칙 주석 보강
 from __future__ import annotations
+
 import os
 import re
 import logging
 from dataclasses import dataclass
 from typing import Optional
-from app.schemas.risk import Category
 
 logger = logging.getLogger("out_risk.summarizer")
 
 try:
     from langchain_openai import ChatOpenAI
+
     _LC_AVAILABLE = True
 except Exception:
     ChatOpenAI = None
     _LC_AVAILABLE = False
 
+
 @dataclass
-# 20260131 이종헌 신규: 요약 결과 스키마(summary/why/추정여부) 컨테이너
 class esg_SummaryResult:
     summary_ko: str
     why: str
     is_estimated: bool
 
-# 20260203 이종헌 수정: 근거 본문 길이 기반 추정 판정 보조, 근거 부족 판단 시 추정(prefix) 처리
+
 def esg_is_evidence_weak(text: str) -> bool:
     return len((text or "").strip()) < 40
 
-# 20260203 이종헌 수정: strict_grounding 시 추정 문구 prefix 강제
+
 def esg_prefix_if_needed(strict: bool, is_estimated: bool, text: str) -> str:
     if strict and is_estimated and not (text or "").startswith("추정"):
         return "추정: " + (text or "")
     return text or ""
 
-# 20260203 이종헌 수정: LLM 요약 실패 시 규칙 기반 문구로 안전 fallback
+
 def esg_summarize_and_why(
     text: str,
-    category: Category,
+    category: str,
     severity: int,
     strict_grounding: bool,
     model: Optional[str] = None,
 ) -> esg_SummaryResult:
     base = (text or "").strip()
-    
-    # [방어] 입력 데이터 부재 시
+    category_name = (category or "GENERAL").strip() or "GENERAL"
+    safe_severity = max(0, int(severity or 0))
+
     if not base:
         return esg_SummaryResult(
             summary_ko="추정: 분석할 외부 근거 문서가 존재하지 않습니다.",
@@ -56,15 +57,15 @@ def esg_summarize_and_why(
     weak = esg_is_evidence_weak(base)
     api_key = os.getenv("OPENAI_API_KEY")
 
-    # 1. LLM 수행
     if _LC_AVAILABLE and api_key:
         try:
             target_model = model or os.getenv("OPENAI_MODEL_LIGHT", "gpt-4o-mini")
             llm = ChatOpenAI(model=target_model, temperature=0, openai_api_key=api_key)
 
             prompt = (
-                f"당신은 ESG 전문 분석 위원입니다. 아래 텍스트에서 {category} 리스크를 요약하세요.\n"
-                "반드시 아래 형식을 지키고, 없는 사실은 지어내지 마세요.\n\n"
+                f"당신은 ESG 전문 분석가입니다. 아래 텍스트에서 {category_name} 이슈를 한 줄로 요약하세요.\n"
+                f"심각도 참고값: {safe_severity}\n"
+                "없는 사실은 만들지 말고 아래 형식을 지키세요.\n\n"
                 "[결과 형식]\n"
                 "summary_ko: 핵심 요약\n"
                 "why: 근거 문장\n"
@@ -75,7 +76,6 @@ def esg_summarize_and_why(
             msg = llm.invoke(prompt)
             out = str(getattr(msg, "content", msg))
 
-            # [강화] 파싱 로직: 캡처 그룹 실패 시 None 방지
             m1 = re.search(r"summary_ko:\s*(.*)", out)
             m2 = re.search(r"why:\s*(.*)", out)
             m3 = re.search(r"is_estimated:\s*(true|false)", out, re.IGNORECASE)
@@ -86,15 +86,12 @@ def esg_summarize_and_why(
 
             summary = esg_prefix_if_needed(strict_grounding, is_estimated, summary)
             return esg_SummaryResult(summary_ko=summary, why=why, is_estimated=is_estimated)
-
         except Exception as e:
-            logger.error(f"LLM Error: {e}")
-            # LLM 에러 발생 시 Fallback으로 이동
+            logger.error("LLM Error: %s", e)
 
-    # 2. Fallback: Rule-based (LLM 불가 상황)
     snippet = base[:180].replace("\n", " ")
     return esg_SummaryResult(
-        summary_ko=esg_prefix_if_needed(strict_grounding, True, f"{category} 관련 신호 감지: {snippet}"),
+        summary_ko=esg_prefix_if_needed(strict_grounding, True, f"{category_name} 관련 신호 감지: {snippet}"),
         why=snippet,
-        is_estimated=True
+        is_estimated=True,
     )

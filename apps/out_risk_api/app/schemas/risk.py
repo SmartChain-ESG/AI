@@ -14,6 +14,12 @@ class RiskLevel(str, Enum):
     HIGH = "HIGH"
 
 
+class Category(str, Enum):
+    SAFETY_ACCIDENT = "SAFETY_ACCIDENT"
+    LEGAL_SANCTION = "LEGAL_SANCTION"
+    GENERAL = "GENERAL"
+
+
 class RagConfig(BaseModel):
     enabled: bool = False  # 수정: 기본 OFF(타임아웃 안정화 목적)
 
@@ -25,6 +31,16 @@ class DocItem(BaseModel):
     source: str
     published_at: Optional[str] = None
     snippet: Optional[str] = None
+
+
+class Signal(BaseModel):
+    category: Category
+    severity: int = Field(ge=0)
+    score: float = Field(ge=0)
+    title: str
+    summary_ko: str
+    why: str
+    published_at: Optional[str] = None
 
 
 class ExternalRiskDetectVendorResult(BaseModel):

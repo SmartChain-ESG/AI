@@ -173,14 +173,27 @@ def _esg_parse_gdelt_to_docs(data: Dict[str, Any]) -> List[DocItem]:
 # 20260202 이종헌 수정: GDELT 우선 + RSS fallback 통합 검색 오케스트레이션, GDELT 실패 시 RSS fallback으로 문서 수집
 # 20260203 이종헌 수정: GDELT/RSS 단계별 wait_for timeout 적용으로 전체 응답 지연 방지
 async def esg_search_documents(req: SearchPreviewRequest) -> List[DocItem]:
-    try:
-        docs = await asyncio.wait_for(esg_search_gdelt(req), timeout=3.5)
-    except asyncio.TimeoutError:
-        docs = []
-    if docs:
-        return docs[:10]
-    try:
-        rss_docs = await asyncio.wait_for(asyncio.to_thread(esg_search_rss, req), timeout=3.5)
-    except asyncio.TimeoutError:
-        rss_docs = []
+    async def _gdelt_safe() -> List[DocItem]:
+        try:
+            return await asyncio.wait_for(esg_search_gdelt(req), timeout=3.5)
+        except asyncio.TimeoutError:
+            logger.warning("GDELT stage timeout vendor=%s", req.vendor)
+            return []
+        except Exception as e:
+            logger.warning("GDELT stage failed vendor=%s err=%s", req.vendor, e)
+            return []
+
+    async def _rss_safe() -> List[DocItem]:
+        try:
+            return await asyncio.wait_for(asyncio.to_thread(esg_search_rss, req), timeout=3.5)
+        except asyncio.TimeoutError:
+            logger.warning("RSS stage timeout vendor=%s", req.vendor)
+            return []
+        except Exception as e:
+            logger.warning("RSS stage failed vendor=%s err=%s", req.vendor, e)
+            return []
+
+    gdelt_docs, rss_docs = await asyncio.gather(_gdelt_safe(), _rss_safe())
+    if gdelt_docs:
+        return gdelt_docs[:10]
     return rss_docs[:10]

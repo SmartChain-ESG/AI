@@ -4,15 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 from typing import List, Optional
-
-try:
-    from langchain_openai import ChatOpenAI
-    _LC_AVAILABLE = True
-except Exception:
-    ChatOpenAI = None
-    _LC_AVAILABLE = False
 
 from app.schemas.risk import (
     ExternalRiskDetectBatchRequest,
@@ -25,12 +17,14 @@ from app.schemas.risk import (
 )
 from app.search.provider import esg_search_documents
 from app.analyze.sentiment import esg_split_docs_by_sentiment
+from app.analyze.classifier import esg_classify_and_score
+from app.analyze.summarizer import esg_summarize_and_why
+from app.scoring.rules import esg_level_from_total, esg_recency_weight
 from app.core import config as app_config
 
 logger = logging.getLogger("out_risk.detect")
 
 
-# 20260201 이종헌 신규: preview 단계에서 검색 문서 개요를 반환하는 엔트리
 async def esg_search_preview(req: SearchPreviewRequest) -> SearchPreviewResponse:
     docs: List[DocItem] = await esg_search_documents(req)
     return SearchPreviewResponse(
@@ -41,11 +35,10 @@ async def esg_search_preview(req: SearchPreviewRequest) -> SearchPreviewResponse
     )
 
 
-# 20260203 이종헌 수정: 벤더 배치 실행/세마포어/타임아웃 제어 오케스트레이션
 async def esg_detect_external_risk_batch(req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectBatchResponse:
-    # 20260203 이종헌 수정: 배치 실행 시 vendor 단위 wait_for timeout으로 hang 방지
-    esg_per_vendor_timeout_sec = 6.0
-    sem = asyncio.Semaphore(2)
+    esg_per_vendor_timeout_sec = 12.0
+    max_parallel = min(4, max(2, len(req.vendors)))
+    sem = asyncio.Semaphore(max_parallel)
 
     async def _run_one(vendor: str) -> ExternalRiskDetectVendorResult:
         async with sem:
@@ -68,12 +61,26 @@ async def esg_detect_external_risk_batch(req: ExternalRiskDetectBatchRequest) ->
                     ],
                     evidence=[],
                 )
+            except Exception as e:
+                logger.warning("vendor detect failed vendor=%s err=%s", vendor, e)
+                return ExternalRiskDetectVendorResult(
+                    vendor=vendor,
+                    external_risk_level=RiskLevel.LOW,
+                    total_score=0.0,
+                    docs_count=0,
+                    reason_1line=f"{vendor} 관련 외부 이슈 분석 중 오류가 발생해 기본값으로 처리되었습니다.",
+                    reason_3lines=[
+                        "단건 분석 중 예외가 발생했습니다.",
+                        "해당 벤더 결과는 LOW/0점으로 안전 처리되었습니다.",
+                        "서버 로그의 vendor detect failed 항목을 확인하세요.",
+                    ],
+                    evidence=[],
+                )
 
     results = await asyncio.gather(*[_run_one(v) for v in req.vendors])
     return ExternalRiskDetectBatchResponse(results=results)
 
 
-# 20260203 이종헌 수정: 단일 벤더 기준 검색→RAG(옵션)→감성분리→점수화 파이프라인
 async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatchRequest) -> ExternalRiskDetectVendorResult:
     docs: List[DocItem] = await esg_search_documents(_esg_build_search_req(vendor, req))
     docs_used = docs
@@ -81,6 +88,7 @@ async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatch
     if req.rag.enabled and docs:
         try:
             from app.rag.chroma import esg_get_rag
+
             rag = esg_get_rag()
             if rag.esg_ready():
                 text_items = []
@@ -127,7 +135,6 @@ async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatch
     docs_for_score = negative_docs
 
     reason_3lines = _esg_make_reason_3lines(vendor, docs_for_score, non_negative_docs)
-    # 20260203 이종헌 수정: reason_1line LLM 호출 로그(start/success/fail)로 가시성 확보
     reason_1line = await _esg_make_reason_1line(vendor, docs_for_score)
     total_score = _esg_calc_total_score(docs_for_score)
     level = _esg_level_from_score(total_score)
@@ -143,28 +150,32 @@ async def esg_detect_external_risk_one(vendor: str, req: ExternalRiskDetectBatch
     )
 
 
-# 20260201 이종헌 신규: 벤더 단위 SearchPreviewRequest 빌더
 def _esg_build_search_req(vendor: str, req: ExternalRiskDetectBatchRequest) -> SearchPreviewRequest:
     return SearchPreviewRequest(vendor=vendor, rag=req.rag)
 
 
-# 20260203 이종헌 수정: docs/non_negative 집계 기반 3줄 사유 생성
 def _esg_make_reason_3lines(vendor: str, docs: List[DocItem], non_negative: List[DocItem]) -> List[str]:
     if not docs:
         return [
-            f"{vendor} 관련 부정 이슈 문서가 확인되지 않았습니다.",
-            f"긍정/중립 문서 {len(non_negative)}건은 점수에서 제외되었습니다.",
-            "필요하면 키워드/감정 규칙을 조정하세요.",
+            f"{vendor} 관련 부정 외부 이슈 문서가 확인되지 않았습니다.",
+            f"긍정/중립 문서 {len(non_negative)}건은 점수 계산에서 제외되었습니다.",
+            "필요시 감정 키워드 규칙을 조정하세요.",
         ]
     sources = sorted({d.source for d in docs if d.source})[:3]
+    category_line = "탐지 분류: GENERAL"
+    try:
+        _, signals = esg_classify_and_score(vendor, docs)
+        if signals:
+            category_line = f"탐지 분류: {signals[0].category.value} (sev={signals[0].severity})"
+    except Exception as e:
+        logger.warning("classifier skipped vendor=%s err=%s", vendor, e)
     return [
-        f"{vendor} 관련 외부 문서 {len(docs)}건을 수집했습니다.",
+        f"{vendor} 관련 부정 문서 {len(docs)}건을 수집했습니다.",
         f"주요 출처: {', '.join(sources) if sources else 'N/A'}",
-        "문서 상위 10건을 evidence로 제공합니다.",
+        category_line,
     ]
 
 
-# 20260203 이종헌 수정: 제목 기반 1줄 요약(LLM 우선, 실패 시 fallback)
 async def _esg_make_reason_1line(vendor: str, docs: List[DocItem]) -> str:
     if not docs:
         return f"{vendor} 관련 외부 이슈 문서가 확인되지 않았습니다."
@@ -172,67 +183,35 @@ async def _esg_make_reason_1line(vendor: str, docs: List[DocItem]) -> str:
     titles = [d.title for d in docs[:3] if d.title]
     joined = " / ".join(titles)
 
-    if _LC_AVAILABLE:
-        try:
-            logger.info("reason_1line LLM start vendor=%s docs=%s", vendor, len(docs))
-            prompt = (
-                "다음 기사 제목들을 참고해 한 줄 요약을 한국어로 작성하세요. "
-                "회사명과 핵심 키워드 중심으로 40자 이내.\n\n"
-                f"회사: {vendor}\n"
-                f"제목: {joined}"
+    try:
+        logger.info("reason_1line summarizer start vendor=%s docs=%s", vendor, len(docs))
+
+        def _invoke_summarizer() -> str:
+            summary = esg_summarize_and_why(
+                text=joined,
+                category="GENERAL",
+                severity=3,
+                strict_grounding=False,
+                model=app_config.OPENAI_MODEL_LIGHT,
             )
+            return (summary.summary_ko or "").strip()
 
-            def _invoke_llm() -> str:
-                llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
-                msg = llm.invoke(prompt)
-                return str(getattr(msg, "content", msg)).strip()
-
-            out = await asyncio.wait_for(asyncio.to_thread(_invoke_llm), timeout=3.0)
-            if out:
-                logger.info("reason_1line LLM success vendor=%s", vendor)
-                return out
-        except asyncio.TimeoutError:
-            logger.warning("reason_1line LLM timeout vendor=%s", vendor)
-        except Exception as e:
-            logger.warning("reason_1line LLM failed: %s", e)
+        out = await asyncio.wait_for(asyncio.to_thread(_invoke_summarizer), timeout=3.0)
+        if out:
+            logger.info("reason_1line summarizer success vendor=%s", vendor)
+            return out
+    except asyncio.TimeoutError:
+        logger.warning("reason_1line summarizer timeout vendor=%s", vendor)
+    except Exception as e:
+        logger.warning("reason_1line summarizer failed vendor=%s err=%s", vendor, e)
 
     return f"{vendor} 관련 기사 {len(docs)}건 감지 (최근: {titles[0] if titles else 'N/A'})"
 
 
-# 20260201 이종헌 신규: published_at 문자열을 datetime으로 안전 파싱
-def _parse_date(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    v = value.strip()
-    if not v:
-        return None
-    try:
-        if "T" in v and v.endswith("Z"):
-            return datetime.strptime(v, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
-        return datetime.fromisoformat(v.replace("Z", "+00:00"))
-    except Exception:
-        return None
-
-
-# 20260201 이종헌 신규: 날짜 신선도 가중치 계산(30/90/180일)
 def _age_weight(published_at: Optional[str]) -> float:
-    dt = _parse_date(published_at)
-    if not dt:
-        return 0.7
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc)
-    days = (now - dt).days
-    if days <= 30:
-        return 1.5
-    if days <= 90:
-        return 1.0
-    if days <= 180:
-        return 0.7
-    return 0.4
+    return esg_recency_weight((published_at or "").strip())
 
 
-# 20260201 이종헌 신규: 문서별 가중치 합산 후 총점(상한 10) 계산
 def _esg_calc_total_score(docs: List[DocItem]) -> float:
     if not docs:
         return 0.0
@@ -242,10 +221,5 @@ def _esg_calc_total_score(docs: List[DocItem]) -> float:
     return min(10.0, round(score, 2))
 
 
-# 20260201 이종헌 신규: 총점을 LOW/MEDIUM/HIGH risk level로 변환
 def _esg_level_from_score(score: float) -> RiskLevel:
-    if score >= 10.0:
-        return RiskLevel.HIGH
-    if score >= 5.0:
-        return RiskLevel.MEDIUM
-    return RiskLevel.LOW
+    return esg_level_from_total(score)
