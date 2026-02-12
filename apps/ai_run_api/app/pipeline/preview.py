@@ -23,7 +23,7 @@ from app.schemas.run import (
     SlotHint,
     SlotStatus,
 )
-from app.storage.tmp_store import get_or_create, update_hints, update_statuses
+from app.storage.tmp_store import get_or_create, remove_hints, update_hints, update_statuses
 
 
 # ── LLM 슬롯 추정 프롬프트 ──────────────────────────────
@@ -135,6 +135,10 @@ def _evaluate_coverage(
 async def run_preview(req: PreviewRequest) -> PreviewResponse:
     # 1. package_id 발급/조회 + 누적 저장소
     state = get_or_create(req.package_id, req.domain)
+
+    # 1-1. 삭제된 파일 힌트 제거 (누적 상태 업데이트)
+    if req.removed_file_ids:
+        remove_hints(state.package_id, req.removed_file_ids)
 
     # 2. 새 파일 슬롯 추정 (룰 + LLM 폴백)
     new_hints = await _suggest_slots(req.added_files, req.domain)
