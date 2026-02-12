@@ -38,11 +38,19 @@ def get_or_create(package_id: str | None, domain: str) -> PackageState:
 
 def update_hints(package_id: str, new_hints: list[SlotHint]) -> None:
     state = _store[package_id]
-    existing_file_ids = {h.file_id for h in state.slot_hints}
+    # file_id가 겹치면 최신으로 덮어쓰기 위해 맵으로 관리
+    hint_map = {h.file_id: h for h in state.slot_hints}
     for h in new_hints:
-        if h.file_id not in existing_file_ids:
-            state.slot_hints.append(h)
-            existing_file_ids.add(h.file_id)
+        hint_map[h.file_id] = h
+    state.slot_hints = list(hint_map.values())
+
+
+def remove_hints(package_id: str, file_ids: list[str]) -> None:
+    """삭제된 파일 ID 목록을 받아 저장소에서 제거한다."""
+    if package_id not in _store:
+        return
+    state = _store[package_id]
+    state.slot_hints = [h for h in state.slot_hints if h.file_id not in file_ids]
 
 
 def update_statuses(package_id: str, statuses: list[SlotStatus]) -> None:

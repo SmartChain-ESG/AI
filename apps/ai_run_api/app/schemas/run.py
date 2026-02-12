@@ -40,7 +40,8 @@ class PreviewRequest(BaseModel):
     period_start: date
     period_end: date
     package_id: str | None = None
-    added_files: list[FileRef]
+    added_files: list[FileRef] = Field(default_factory=list)
+    removed_file_ids: list[str] | None = None
 
 
 class PreviewResponse(BaseModel):
