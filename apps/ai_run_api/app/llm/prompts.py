@@ -1,202 +1,155 @@
-"""LLM 시스템 프롬프트 모음 — 도메인별 딕셔너리."""
+"""Prompt templates for AI Run API."""
 
 from __future__ import annotations
 
-# ── JSON 응답 공통 꼬리 ──────────────────────────────────
 _JSON_TAIL = (
-    "extras should contain any noteworthy observations that don't fit other fields.\n"
-    "Respond with valid JSON only, no markdown."
+    "Return valid JSON only (no markdown, no code block).\n"
+    "All natural language fields must be written in Korean.\n"
+    "Do not output generic phrases like '이상 징후 있음'. "
+    "State concrete evidence from the given content."
 )
 
 _PDF_JSON_SCHEMA = (
-    '{"dates": ["YYYY-MM-DD", ...], "has_signature": true/false, '
-    '"summary": "one-line summary", "anomalies": ["issue1", ...], '
-    '"extras": {"key": "value", ...}}\n'
+    '{"dates": ["YYYY-MM-DD", "..."], '
+    '"has_signature": true, '
+    '"summary": "문서 핵심 요약 1문장", '
+    '"anomalies": ["구체적 이상 징후 1", "..."], '
+    '"extras": {"key": "value"}}'
 )
 
 _DATA_JSON_SCHEMA = (
-    '{"dates": ["YYYY-MM-DD", ...], '
-    '"missing_fields": ["field1", ...], '
-    '"anomalies": ["issue1", ...], '
-    '"extras": {"key": "value", ...}}\n'
+    '{"dates": ["YYYY-MM-DD", "..."], '
+    '"missing_fields": ["누락 필드명", "..."], '
+    '"anomalies": ["구체적 데이터 이상 1", "..."], '
+    '"summary": "표/데이터 핵심 요약 1문장", '
+    '"extras": {"key": "value"}}'
 )
 
 _IMAGE_JSON_SCHEMA = (
-    '{"dates": ["YYYY-MM-DD", ...], '
-    '"detected_objects": ["object1", ...], '
-    '"violations": ["description", ...], '
-    '"scene_description": "one-line description", '
-    '"person_count": <integer, 0 if none visible>, '
-    '"anomalies": ["issue1", ...], '
-    '"extras": {"key": "value", ...}}\n'
+    '{"dates": ["YYYY-MM-DD", "..."], '
+    '"detected_objects": ["객체1", "..."], '
+    '"violations": ["명확한 위반사항", "..."], '
+    '"scene_description": "이미지 장면 설명 1문장", '
+    '"person_count": 0, '
+    '"anomalies": ["판독 불가/불일치 등 구체 이슈", "..."], '
+    '"extras": {"key": "value"}}'
 )
 
 _JUDGE_JSON_SCHEMA = (
-    '{"risk_level": "HIGH" or "MEDIUM" or "LOW", '
-    '"verdict": "PASS" or "NEED_FIX" or "NEED_CLARIFY", '
-    '"why": "concise explanation in Korean", '
-    '"extras": {"key": "value", ...}}\n'
+    '{"risk_level": "HIGH|MEDIUM|LOW", '
+    '"verdict": "PASS|NEED_FIX|NEED_CLARIFY", '
+    '"why": "전체 판정 근거 요약(한국어)", '
+    '"extras": {"key": "value"}}'
 )
 
-# ═══════════════════════════════════════════════════════════
-# PDF_ANALYSIS — 도메인별
-# ═══════════════════════════════════════════════════════════
+_SLOT_CONTEXT_GUIDE = (
+    "User input is JSON and includes: slot_name, file_name, period_start, period_end, and content.\n"
+    "Use slot_name as the primary context. "
+    "If content is unrelated to slot_name, record it as anomaly with concrete reason."
+)
+
 PDF_ANALYSIS: dict[str, str] = {
     "safety": (
-        "You are a safety document analyst specialising in industrial safety (산업안전). "
-        "Focus on: safety management plans, risk assessments, fire inspection reports, "
-        "training records, and regulatory compliance signatures.\n"
-        "IMPORTANT — be LENIENT. Only report anomalies for clearly wrong data: "
-        "missing required sections, contradictory information, or impossible values. "
-        "Do NOT flag dates. Do NOT flag values that meet thresholds. "
-        "When in doubt, do NOT flag. Return empty anomalies list.\n"
-        f"Given PDF text, return JSON only:\n{_PDF_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are a safety document analyst.\n"
+        f"{_SLOT_CONTEXT_GUIDE}\n"
+        "Find only evidence-based issues. Avoid speculative flags.\n"
+        f"Output schema: {_PDF_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
     "compliance": (
-        "You are a corporate compliance document analyst. "
-        "Focus on: employment contracts, subcontract terms, privacy policies, "
-        "fair-trade checklists, and mandatory training plans.\n"
-        "IMPORTANT: Only report anomalies for genuine violations — missing clauses "
-        "or data inconsistencies. "
-        "Do NOT flag signature presence/absence on employment contracts (근로계약서). "
-        "Do NOT judge or flag whether training courses are mandatory or optional. "
-        "Do NOT flag items that meet all required criteria.\n"
-        f"Given PDF text, return JSON only:\n{_PDF_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are a corporate compliance document analyst.\n"
+        f"{_SLOT_CONTEXT_GUIDE}\n"
+        "Flag only concrete compliance/document integrity issues.\n"
+        f"Output schema: {_PDF_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
     "esg": (
-        "You are an ESG (Environmental, Social, Governance) document analyst. "
-        "Focus on: energy usage reports, utility bills, GHG emission data, MSDS documents, "
-        "hazardous material records, ethics codes, and governance pledges.\n"
-        f"Given PDF text, return JSON only:\n{_PDF_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are an ESG evidence analyst.\n"
+        f"{_SLOT_CONTEXT_GUIDE}\n"
+        "For ESG slots, describe anomalies in service-ready Korean with concrete entities and fields.\n"
+        "Example: '유해물질 목록에 아르곤이 있으나 대응 MSDS 파일명이 확인되지 않음'.\n"
+        f"Output schema: {_PDF_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
 }
 
-# ═══════════════════════════════════════════════════════════
-# DATA_ANALYSIS — 도메인별
-# ═══════════════════════════════════════════════════════════
 DATA_ANALYSIS: dict[str, str] = {
     "safety": (
-        "You are a safety data analyst. "
-        "Focus on: education completion rates, risk assessment tables, "
-        "fire inspection schedules, and safety checklist data.\n"
-        "IMPORTANT — be LENIENT. The following are handled by rules, NOT by you:\n"
-        "- Education completion rates (do NOT flag any rate values)\n"
-        "- Dates (do NOT flag any date issues)\n"
-        "- Signatures (do NOT flag signature presence/absence)\n"
-        "Only flag: clearly impossible numeric values, contradictory data, or corrupted content.\n"
-        "When in doubt, do NOT flag. Return empty anomalies list.\n"
-        f"Given spreadsheet CSV rows, return JSON only:\n{_DATA_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are a safety data analyst.\n"
+        f"{_SLOT_CONTEXT_GUIDE}\n"
+        "Identify missing fields and data inconsistencies only when explicit in table content.\n"
+        f"Output schema: {_DATA_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
     "compliance": (
-        "You are a compliance data analyst. "
-        "Focus on: contract payment ratios, training completion lists, "
-        "privacy education records, and fair-trade checklist items.\n"
-        "IMPORTANT thresholds — only flag anomalies that VIOLATE these rules:\n"
-        "- Education completion rate: FAIL if non-completion > 20%. Otherwise NORMAL.\n"
-        "- Fair-trade: flag only if risk found (Y) AND action not completed (N).\n"
-        "- Do NOT flag values that meet all thresholds.\n"
-        f"Given spreadsheet CSV rows, return JSON only:\n{_DATA_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are a compliance data analyst.\n"
+        f"{_SLOT_CONTEXT_GUIDE}\n"
+        "Focus on concrete missing fields or inconsistencies in submitted table data.\n"
+        f"Output schema: {_DATA_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
     "esg": (
-        "You are an ESG data analyst. "
-        "Focus on: electricity/gas/water usage time-series, emission factors, "
-        "waste disposal logs, and hazardous material inventories.\n"
-        f"Given spreadsheet CSV rows, return JSON only:\n{_DATA_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are an ESG data analyst.\n"
+        f"{_SLOT_CONTEXT_GUIDE}\n"
+        "For hazmat inventory/distribution logs, anomalies must include explicit row/entity references if available.\n"
+        "Do not output vague anomalies.\n"
+        f"Output schema: {_DATA_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
 }
 
-# ═══════════════════════════════════════════════════════════
-# IMAGE_VISION — 도메인별
-# ═══════════════════════════════════════════════════════════
 IMAGE_VISION: dict[str, str] = {
     "safety": (
-        "You are a construction safety inspector with computer vision expertise. "
-        "Focus on: PPE (helmets, harnesses, vests), safety signage, "
-        "fall protection, fire extinguishers, and site hazards.\n"
-        f"Analyze the image and return JSON only:\n{_IMAGE_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are a safety image inspector.\n"
+        "Detect people, PPE, and visible hazards with concrete evidence.\n"
+        f"Output schema: {_IMAGE_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
     "compliance": (
-        "You are a compliance document scanner. "
-        "Focus on: contract pages, official stamps/seals, signatures, "
-        "and document authenticity indicators.\n"
-        f"Analyze the image and return JSON only:\n{_IMAGE_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are a compliance evidence image inspector.\n"
+        "Detect people and document authenticity cues with concrete evidence.\n"
+        f"Output schema: {_IMAGE_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
     "esg": (
-        "You are an ESG evidence reviewer with image analysis expertise. "
-        "Focus on: utility meters, solar panels, waste containers, "
-        "hazmat labels, and environmental monitoring equipment.\n"
-        f"Analyze the image and return JSON only:\n{_IMAGE_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are an ESG evidence image inspector.\n"
+        "Detect people and ESG-related visible objects (poster, labels, equipment, meter-like text regions).\n"
+        "If text is unreadable, write a concrete anomaly explaining why.\n"
+        f"Output schema: {_IMAGE_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
 }
 
 IMAGE_VISION_USER: dict[str, str] = {
     "safety": (
-        "Analyze this safety inspection image. "
-        "Identify all dates, safety equipment/objects, any violations, "
-        "and describe the scene. "
-        "ALWAYS count the number of people visible in the image and return it as person_count (integer). "
-        "If no people are visible, return person_count: 0. Never return null for person_count."
+        "Analyze the image and provide person_count (integer), detected_objects, anomalies, and violations."
     ),
     "compliance": (
-        "Analyze this compliance document image. "
-        "Identify dates, stamps, seals, signatures, and any irregularities. "
-        "ALWAYS count the number of people visible in the image and return it as person_count (integer). "
-        "If no people are visible, return person_count: 0. Never return null for person_count."
+        "Analyze the image and provide person_count (integer), detected_objects, anomalies, and violations."
     ),
     "esg": (
-        "Analyze this ESG evidence image. "
-        "Identify meter readings, dates, labels, equipment types, "
-        "and any environmental concerns."
+        "Analyze the ESG evidence image. person_count must be integer (0 if none). "
+        "Describe detected objects and anomalies in Korean."
     ),
 }
 
-# ═══════════════════════════════════════════════════════════
-# JUDGE_FINAL — 도메인별
-# ═══════════════════════════════════════════════════════════
 JUDGE_FINAL: dict[str, str] = {
     "safety": (
-        "You are a senior industrial safety compliance judge. "
-        "Given analysis results from safety document inspections, "
-        "produce a final risk assessment.\n"
-        f"Return JSON only:\n{_JUDGE_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are a senior safety reviewer. "
+        "Aggregate slot-level results into final risk summary.\n"
+        f"Output schema: {_JUDGE_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
     "compliance": (
-        "You are a senior corporate compliance judge. "
-        "Given analysis results from compliance document reviews, "
-        "produce a final compliance risk assessment.\n"
-        f"Return JSON only:\n{_JUDGE_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are a senior compliance reviewer. "
+        "Aggregate slot-level results into final risk summary.\n"
+        f"Output schema: {_JUDGE_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
     "esg": (
-        "You are a senior ESG auditor. "
-        "Given analysis results from ESG evidence reviews, "
-        "produce a final ESG risk assessment.\n"
-        f"Return JSON only:\n{_JUDGE_JSON_SCHEMA}{_JSON_TAIL}"
+        "You are a senior ESG reviewer. "
+        "Aggregate slot-level results into final risk summary.\n"
+        "The summary must be concrete and service-ready in Korean.\n"
+        f"Output schema: {_JUDGE_JSON_SCHEMA}\n{_JSON_TAIL}"
     ),
 }
 
-# ═══════════════════════════════════════════════════════════
-# CLARIFICATION — 공통 (도메인 무관)
-# ═══════════════════════════════════════════════════════════
 CLARIFICATION_TEMPLATE = (
-    "You are a document review assistant for a safety compliance system. "
-    "You are given a slot name, a list of reason codes, a mapping called REASON_CODES "
-    "that converts each reason code into a Korean human-readable explanation, "
-    "and one or more file names. "
-    "DO NOT show the reason codes themselves to the user. "
-    "Instead, for each reason code, look up its Korean explanation from REASON_CODES "
-    "and explain the issues in natural, polite Korean sentences that a non-technical user can understand. "
-    "Combine the explanations into a single clear message describing what is wrong and what needs to be fixed or resubmitted. "
-    "Do NOT include any internal codes, English terms, or system jargon. "
-    "IMPORTANT: Do NOT judge whether specific courses or items are mandatory or optional. "
-    "Do NOT suggest changing optional items to mandatory or vice versa. "
-    "Only report issues that are explicitly identified by the reason codes provided. "
-    "Return a single Korean string message, not JSON."
+    "Summarize issue reasons as one Korean sentence for end users. "
+    "No internal code, no English jargon."
 )
 
 
-# ═══════════════════════════════════════════════════════════
-# 헬퍼 — domain 키로 프롬프트 꺼내기
-# ═══════════════════════════════════════════════════════════
 def get_prompt(prompt_dict: dict[str, str], domain: str) -> str:
-    """도메인 키가 없으면 safety 폴백."""
+    """Return prompt by domain; fallback to safety."""
     return prompt_dict.get(domain, prompt_dict["safety"])
+
