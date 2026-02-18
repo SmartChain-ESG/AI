@@ -226,13 +226,22 @@ def _validate_slot(extractions: list[dict], slot_name: str, domain: str) -> Slot
     # A. NEED_FIX: 파일 자체 문제 → 분석 불가, 재제출 필요
     _NEED_FIX_REASONS = {
         "MISSING_SLOT", "PARSE_FAILED", "HEADER_MISMATCH",
-        "EMPTY_TABLE", "OCR_FAILED",
+        "EMPTY_TABLE",
     }
     # B. NEED_CLARIFY: 내용 문제 → 분석은 됐으나 이슈 발견, 소명 필요
     _NEED_CLARIFY_REASONS = {
         "VIOLATION_DETECTED", "LOW_EDUCATION_RATE", "SIGNATURE_MISSING",
         "E2_SPIKE_DETECTED", "E3_BILL_MISMATCH", "LLM_ANOMALY_DETECTED",
+        "OCR_FAILED", "CROSS_HEADCOUNT_MISMATCH",
+        "CROSS_ATTENDANCE_PARSE_FAILED", "CROSS_PHOTO_COUNT_FAILED",
     }
+
+    if slot_name.endswith(".photo") and "OCR_FAILED" in reasons:
+        has_visual_evidence = any(
+            extras.get(k) for k in ("person_count", "scene_description", "detected_objects")
+        )
+        if has_visual_evidence:
+            reasons = [r for r in reasons if r != "OCR_FAILED"]
 
     if any(r in _NEED_FIX_REASONS for r in reasons):
         verdict = "NEED_FIX"

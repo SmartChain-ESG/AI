@@ -11,8 +11,17 @@ from rank_bm25 import BM25Okapi
 
 def _openai_client() -> OpenAI:
     if settings.openai_base_url:
-        return OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
-    return OpenAI(api_key=settings.openai_api_key)
+        return OpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            timeout=settings.openai_timeout_seconds,
+            max_retries=0,
+        )
+    return OpenAI(
+        api_key=settings.openai_api_key,
+        timeout=settings.openai_timeout_seconds,
+        max_retries=0,
+    )
 
 
 class Retriever:

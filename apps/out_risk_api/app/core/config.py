@@ -18,7 +18,23 @@ def _find_env_path(start: Path) -> Path | None:
     return None
 
 ENV_PATH = _find_env_path(Path(__file__).resolve())
-BASE_DIR = ENV_PATH.parent if ENV_PATH else Path(__file__).resolve().parents[4]
+
+
+def _safe_base_dir(current_file: Path) -> Path:
+    if ENV_PATH:
+        return ENV_PATH.parent
+    # Prefer a directory that looks like project root.
+    for p in [current_file.parent, *current_file.parents]:
+        if (p / "requirements.txt").exists() or (p / "pyproject.toml").exists():
+            return p
+    # Fallback without crashing on shallow container paths.
+    try:
+        return current_file.parents[4]
+    except IndexError:
+        return current_file.parent
+
+
+BASE_DIR = _safe_base_dir(Path(__file__).resolve())
 
 
 # 2. .env 로드 로직

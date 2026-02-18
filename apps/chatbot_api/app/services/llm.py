@@ -7,8 +7,17 @@ from app.core.config import settings
 
 def _client() -> OpenAI:
     if settings.openai_base_url:
-        return OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url)
-    return OpenAI(api_key=settings.openai_api_key)
+        return OpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            timeout=settings.openai_timeout_seconds,
+            max_retries=0,
+        )
+    return OpenAI(
+        api_key=settings.openai_api_key,
+        timeout=settings.openai_timeout_seconds,
+        max_retries=0,
+    )
 
 
 def generate_answer(system_prompt: str, user_prompt: str, *, use_heavy: bool = True) -> str:

@@ -111,7 +111,9 @@ def cross_validate_slot(
                     f"(차이 {diff}명, 허용 {tolerance}명)"
                 )
 
-        verdict = "NEED_FIX" if reasons else "PASS"
+        if reasons and "detail" not in extras:
+            extras["detail"] = "교육 출석부와 교육 사진 간 인원 비교 근거가 충분하지 않습니다."
+        verdict = "NEED_CLARIFY" if reasons else "PASS"
         out.append({
             "slot_name": f"{slot_a}__x__{slot_b}",
             "reasons": reasons,

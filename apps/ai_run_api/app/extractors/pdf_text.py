@@ -71,7 +71,9 @@ async def extract_pdf(
             full_text = ocr_text if len(ocr_text) > len(full_text) else full_text
             ocr_applied = True
         except Exception:
-            reasons.append("OCR_FAILED")
+            # OCR 호출이 실패해도 기본 텍스트가 충분하면 판독 실패로 보지 않는다.
+            if len(full_text.strip()) < 80:
+                reasons.append("OCR_FAILED")
 
     dates = _extract_dates(full_text)
 

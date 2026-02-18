@@ -16,9 +16,22 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 api_key_header = APIKeyHeader(name="X-API-KEY", auto_error=False)
 
 # ✅ 경로 설정 (그대로 유지)
-APP_DIR = Path(__file__).resolve().parents[1]
+def _find_repo_root(start_file: Path) -> Path:
+    # Treat a directory containing dependency manifest as project root.
+    for p in [start_file.parent, *start_file.parents]:
+        if (p / "requirements.txt").exists() or (p / "pyproject.toml").exists():
+            return p
+    # Fallback to previous structure, but avoid crashing on shallow paths.
+    try:
+        return start_file.parents[2]
+    except IndexError:
+        return start_file.parent
+
+
+_THIS_FILE = Path(__file__).resolve()
+REPO_ROOT = _find_repo_root(_THIS_FILE)
+APP_DIR = REPO_ROOT / "app"
 MANUALS_DIR = APP_DIR / "manuals"
-REPO_ROOT = APP_DIR.parents[2]
 
 
 def require_admin_key(api_key: str | None = Depends(api_key_header)) -> None:
